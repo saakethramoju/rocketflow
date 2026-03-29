@@ -1,5 +1,6 @@
 from typing import Optional
 from enum import Enum
+from Global import SIUnits
 
 
 class BoundaryType(Enum):
@@ -17,6 +18,15 @@ class Boundary:
         self.name = name
         self.pressure = pressure
         self.mass_flow = mass_flow
+
+        self.system_variables = {
+            "pressure" : {
+                "units" : SIUnits.PRESSURE.value
+            },
+            "mass_flow" : {
+                "units" : SIUnits.MASS_FLOW.value
+            }
+        }
 
         if boundary_type is None:
             if pressure is not None:
@@ -50,8 +60,8 @@ class Boundary:
 
 
 class Source(Boundary):
-    pressure_counter = 0
-    mass_flow_counter = 0
+    _pressure_counter = 0
+    _mass_flow_counter = 0
 
     def __init__(self,
                  name: Optional[str] = None,
@@ -63,16 +73,16 @@ class Source(Boundary):
 
         if self.name is None:
             if self.boundary_type == BoundaryType.PRESSURE:
-                self.name = f"Pressure Source {Source.pressure_counter}"
-                Source.pressure_counter += 1
+                self.name = f"Pressure Source {Source._pressure_counter}"
+                Source._pressure_counter += 1
             else:
-                self.name = f"Mass Flow Source {Source.mass_flow_counter}"
-                Source.mass_flow_counter += 1
+                self.name = f"Mass Flow Source {Source._mass_flow_counter}"
+                Source._mass_flow_counter += 1
 
 
 class Drain(Boundary):
-    pressure_counter = 0
-    mass_flow_counter = 0
+    _pressure_counter = 0
+    _mass_flow_counter = 0
 
     def __init__(self,
                  name: Optional[str] = None,
@@ -84,8 +94,8 @@ class Drain(Boundary):
 
         if self.name is None:
             if self.boundary_type == BoundaryType.PRESSURE:
-                self.name = f"Pressure Drain {Drain.pressure_counter}"
-                Drain.pressure_counter += 1
+                self.name = f"Pressure Drain {Drain._pressure_counter}"
+                Drain._pressure_counter += 1
             else:
-                self.name = f"Mass Flow Drain {Drain.mass_flow_counter}"
-                Drain.mass_flow_counter += 1
+                self.name = f"Mass Flow Drain {Drain._mass_flow_counter}"
+                Drain._mass_flow_counter += 1
