@@ -1,0 +1,2 @@
+class BranchMethod:
+    pass

@@ -1,15 +1,21 @@
-from typing import Optional
-from Global import SIUnits
-
+from Physics import NodeMethod, BranchMethod
 
 class Component:
-    """
-    Base class for every component
-    """
-
-    def __init__(self, name: Optional[str] = None):
+    
+    def __init__(self, 
+                 name: str):
         self.name = name
 
-        self.system_variables = {}
-        self.configuration_variables = {}
-        self.iteration_variables = {}
+
+class Node(Component):
+    def __init__(self, 
+                 name: str,
+                 method: NodeMethod):
+        super().__init__(name)
+
+
+class Branch(Component):
+    def __init__(self, 
+                 name: str,
+                 method: BranchMethod):
+        super().__init__(name)
