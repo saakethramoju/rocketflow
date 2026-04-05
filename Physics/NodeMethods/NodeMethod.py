@@ -1,2 +1,0 @@
-class NodeMethod:
-    pass

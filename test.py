@@ -1,10 +1,4 @@
-import numpy as np
-from scipy.optimize import root_scalar
+from System import *
 
-from Components import Source, Drain
-
-s = Drain("tank", mass_flow=3)
-print(s)
-
-
-
+pressure = State(101325)
+print(pressure)
