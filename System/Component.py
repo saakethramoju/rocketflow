@@ -1,11 +1,28 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
-from Components import Variable
+
+
+from System import Variable
+
+if TYPE_CHECKING:
+    from System import Network
 
 class Component(ABC):
 
     def __init__(self, 
-                 name: str):
+                 name: str,
+                 network: Network):
+
+        self.initialize_component(name, network)
+
+
+    def initialize_component(self, name: str, network: Network) -> None:
         self.name = name
+        self.network = network
+        self.network.add_component(component=self)
+
 
     @property
     @abstractmethod
@@ -13,7 +30,7 @@ class Component(ABC):
         pass
 
     #@abstractmethod
-    def pre_state_evaluation(self) -> None:
+    def pre_evaluation(self) -> None:
         pass
 
     @abstractmethod

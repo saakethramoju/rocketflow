@@ -3,23 +3,25 @@ from __future__ import annotations
 import numpy as np
 from typing import TYPE_CHECKING
 
-from Components import Component, Variable
+from System import Component, Variable
 
 if TYPE_CHECKING:
-    from System import State
+    from System import Network, State
+
 
 
 class DischargeCoefficient(Component):
 
     def __init__(self,
                  name: str,
-                 upstream_pressure: State | float,
-                 downstream_pressure: State | float,
-                 density: State | float,
+                 network: Network,
+                 upstream_pressure: State,
+                 downstream_pressure: State,
+                 density: State,
                  discharge_coefficient: float,
                  cross_sectional_area: float,
-                 mass_flow: State | float):
-        super().__init__(name)
+                 mass_flow: State):
+        self.initialize_component(name, network)
 
         self.upstream_pressure = Variable(upstream_pressure)
         self.downstream_pressure = Variable(downstream_pressure)
