@@ -23,7 +23,7 @@ class Component(ABC):
         self.network = network
         self.network.add_component(component=self)
 
-
+    # never put a derived State in the solver’s iteration-variable list!!!
     @property
     @abstractmethod
     def iteration_variables(self) -> list[Variable]:
