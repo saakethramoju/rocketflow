@@ -37,6 +37,7 @@ class State:
             return other
         return State(float(other))
 
+    # ---------- arithmetic ----------
     def __add__(self, other):
         other = self._coerce(other)
         return State(expr=lambda: self.value + other.value)
@@ -83,5 +84,98 @@ class State:
     def __abs__(self):
         return State(expr=lambda: abs(self.value))
 
+    # ---------- basic math ----------
     def sqrt(self):
         return State(expr=lambda: math.sqrt(self.value))
+
+    def exp(self):
+        return State(expr=lambda: math.exp(self.value))
+
+    def expm1(self):
+        return State(expr=lambda: math.expm1(self.value))
+
+    def log(self):
+        return State(expr=lambda: math.log(self.value))
+
+    def log10(self):
+        return State(expr=lambda: math.log10(self.value))
+
+    def log2(self):
+        return State(expr=lambda: math.log2(self.value))
+
+    def log1p(self):
+        return State(expr=lambda: math.log1p(self.value))
+
+    # ---------- trig ----------
+    def sin(self):
+        return State(expr=lambda: math.sin(self.value))
+
+    def cos(self):
+        return State(expr=lambda: math.cos(self.value))
+
+    def tan(self):
+        return State(expr=lambda: math.tan(self.value))
+
+    def asin(self):
+        return State(expr=lambda: math.asin(self.value))
+
+    def acos(self):
+        return State(expr=lambda: math.acos(self.value))
+
+    def atan(self):
+        return State(expr=lambda: math.atan(self.value))
+
+    # ---------- hyperbolic ----------
+    def sinh(self):
+        return State(expr=lambda: math.sinh(self.value))
+
+    def cosh(self):
+        return State(expr=lambda: math.cosh(self.value))
+
+    def tanh(self):
+        return State(expr=lambda: math.tanh(self.value))
+
+    def asinh(self):
+        return State(expr=lambda: math.asinh(self.value))
+
+    def acosh(self):
+        return State(expr=lambda: math.acosh(self.value))
+
+    def atanh(self):
+        return State(expr=lambda: math.atanh(self.value))
+
+    # ---------- angle conversions ----------
+    def degrees(self):
+        return State(expr=lambda: math.degrees(self.value))
+
+    def radians(self):
+        return State(expr=lambda: math.radians(self.value))
+
+    # ---------- rounding / integer ----------
+    def floor(self):
+        return State(expr=lambda: math.floor(self.value))
+
+    def ceil(self):
+        return State(expr=lambda: math.ceil(self.value))
+
+    def trunc(self):
+        return State(expr=lambda: math.trunc(self.value))
+
+    # ---------- misc ----------
+    def modf(self):
+        return (
+            State(expr=lambda: math.modf(self.value)[0]),
+            State(expr=lambda: math.modf(self.value)[1]),
+        )
+
+    def fmod(self, other):
+        other = self._coerce(other)
+        return State(expr=lambda: math.fmod(self.value, other.value))
+
+    def hypot(self, other):
+        other = self._coerce(other)
+        return State(expr=lambda: math.hypot(self.value, other.value))
+
+    def copysign(self, other):
+        other = self._coerce(other)
+        return State(expr=lambda: math.copysign(self.value, other.value))
