@@ -29,6 +29,19 @@ class Network:
 
 
     # -------------- STEADY-STATE -------------- #
+
+    @property
+    def lower_bounds(self) -> list[float]:
+        return [var.lower_bound for var in self.collect_iteration_variables()]
+    
+    @property
+    def upper_bounds(self) -> list[float]:
+        return [var.upper_bound for var in self.collect_iteration_variables()]
+    
+    @property
+    def keep_feasible(self) -> list[bool]:
+        return [var.keep_feasible for var in self.collect_iteration_variables()]
+    
     @property
     def iteration_variables(self) -> list[str]:
         if self._iter_var_name_cache is None:
@@ -87,7 +100,6 @@ class Network:
             )
         for val, var in zip(iteration_values, iter_var_list):
             var.value = val
-
 
 
     # -------------- SOLUTION EXPORTING -------------- #

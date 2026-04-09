@@ -1,4 +1,5 @@
 import math
+import numpy as np
 from typing import Callable
 
 
@@ -8,6 +9,7 @@ class State:
         value: float | None = None,
         expr: Callable[[], float] | None = None,
         bounds: tuple[float | None, float | None] | None = None,
+        keep_feasible: bool = False,
     ):
         """
         A scalar state that can either:
@@ -31,6 +33,10 @@ class State:
                 (lower, None)
                 (None, upper)
             Bounds are enforced only when assigning to a non-derived state.
+        keep_feasible
+            Flag for bounded optimization solvers such as scipy.optimize.Bounds.
+            If True, this variable should remain within bounds throughout
+            the solve iterations. Default is False.
 
         Notes
         -----
@@ -40,6 +46,7 @@ class State:
         """
         self._expr = expr
         self._lower_bound, self._upper_bound = self._normalize_bounds(bounds)
+        self._keep_feasible = bool(keep_feasible)
         self._value = None
 
         if value is not None:
@@ -50,21 +57,26 @@ class State:
     @staticmethod
     def _normalize_bounds(
         bounds: tuple[float | None, float | None] | None,
-    ) -> tuple[float | None, float | None]:
+    ) -> tuple[float, float]:
         if bounds is None:
-            return None, None
+            return -np.inf, np.inf
 
         if not isinstance(bounds, tuple) or len(bounds) != 2:
             raise ValueError("bounds must be None or a tuple of the form (lower, upper).")
 
         lower, upper = bounds
 
-        if lower is not None:
+        if lower is None:
+            lower = -np.inf
+        else:
             lower = float(lower)
-        if upper is not None:
+
+        if upper is None:
+            upper = np.inf
+        else:
             upper = float(upper)
 
-        if lower is not None and upper is not None and lower > upper:
+        if lower > upper:
             raise ValueError(
                 f"Invalid bounds: lower bound {lower} is greater than upper bound {upper}."
             )
@@ -72,11 +84,11 @@ class State:
         return lower, upper
 
     def _validate_bounds(self, v: float) -> None:
-        if self._lower_bound is not None and v < self._lower_bound:
+        if v < self._lower_bound:
             raise ValueError(
                 f"Value {v} is below the lower bound of {self._lower_bound}."
             )
-        if self._upper_bound is not None and v > self._upper_bound:
+        if v > self._upper_bound:
             raise ValueError(
                 f"Value {v} is above the upper bound of {self._upper_bound}."
             )
@@ -126,22 +138,24 @@ class State:
         return self._expr is not None or self._value is not None
 
     @property
-    def bounds(self) -> tuple[float | None, float | None] | None:
-        if self._lower_bound is None and self._upper_bound is None:
-            return None
+    def bounds(self) -> tuple[float, float]:
         return (self._lower_bound, self._upper_bound)
 
     @property
-    def lower_bound(self) -> float | None:
+    def lower_bound(self) -> float:
         return self._lower_bound
 
     @property
-    def upper_bound(self) -> float | None:
+    def upper_bound(self) -> float:
         return self._upper_bound
 
     @property
     def has_bounds(self) -> bool:
-        return self._lower_bound is not None or self._upper_bound is not None
+        return not (self._lower_bound == -np.inf and self._upper_bound == np.inf)
+
+    @property
+    def keep_feasible(self) -> bool:
+        return self._keep_feasible
 
     def is_within_bounds(self, v: float | None = None) -> bool:
         """
@@ -152,9 +166,9 @@ class State:
         if v is None:
             v = self.value
 
-        if self._lower_bound is not None and v < self._lower_bound:
+        if v < self._lower_bound:
             return False
-        if self._upper_bound is not None and v > self._upper_bound:
+        if v > self._upper_bound:
             return False
         return True
 

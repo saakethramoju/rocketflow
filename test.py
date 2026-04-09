@@ -11,8 +11,8 @@ eta_Cf = 1
 
 fuel_tank_pressure = State(550 * PA_PER_PSI)
 ox_tank_pressure = State(500 * PA_PER_PSI)
-fuel_inj_pressure = State(300 * PA_PER_PSI)
-ox_inj_pressure = State(300 * PA_PER_PSI)
+fuel_inj_pressure = State(300 * PA_PER_PSI, bounds=(100*PA_PER_PSI, 600*PA_PER_PSI))
+ox_inj_pressure = State(300 * PA_PER_PSI, keep_feasible=True)
 fuel_density = State(800)
 ox_density = State(1104)
 fuel_runline_mdot = State()

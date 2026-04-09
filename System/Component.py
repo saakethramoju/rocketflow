@@ -23,15 +23,16 @@ class Component(ABC):
         self.network = network
         self.network.add_component(component=self)
 
+
+    #@abstractmethod
+    def pre_evaluation(self) -> None:
+        pass
+
     # never put a derived State in the solver’s iteration-variable list!!!
     @property
     @abstractmethod
     def iteration_variables(self) -> list[Variable]:
         return []
-
-    #@abstractmethod
-    def pre_evaluation(self) -> None:
-        pass
 
     @abstractmethod
     def evaluate_states(self) -> None:
