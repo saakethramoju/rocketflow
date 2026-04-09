@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from System import Network, State
 
 
-class RocketCEANozzle(Component):
+class RocketCEAChokedNozzle(Component):
 
     def __init__(self, 
                  name: str,

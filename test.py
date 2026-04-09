@@ -9,19 +9,19 @@ oxidizer = 'LOX'
 eta_cstar = 1
 eta_Cf = 1
 
-fuel_tank_pressure = State(400 * PA_PER_PSI)
-ox_tank_pressure = State(400 * PA_PER_PSI)
+fuel_tank_pressure = State(550 * PA_PER_PSI)
+ox_tank_pressure = State(500 * PA_PER_PSI)
 fuel_inj_pressure = State(300 * PA_PER_PSI)
 ox_inj_pressure = State(300 * PA_PER_PSI)
 fuel_density = State(800)
 ox_density = State(1104)
-fuel_runline_mdot = State(0)
-ox_runline_mdot = State(0)
-fuel_injector_mdot = State(0)
-ox_injector_mdot = State(0)
+fuel_runline_mdot = State()
+ox_runline_mdot = State()
+fuel_injector_mdot = State()
+ox_injector_mdot = State()
 chamber_pressure = State(200 * PA_PER_PSI)
-nozzle_mdot = State(0)
-thrust = State(0)
+nozzle_mdot = State()
+thrust = State()
 atmospheric_pressure = State(101325)
 
 FuelTank = PressureNode("Fuel Tank", 
@@ -89,16 +89,13 @@ OxInjector = DischargeCoefficient("Ox Injector",
 chamber = RocketCEACombustionChamber("Combustion Chamber",
                                      network=HETS,
                                      chamber_pressure=chamber_pressure,
-                                     fuel=fuel,
-                                     oxidizer=str,
                                      oxidizer_mass_flow=ox_injector_mdot,
                                      fuel_mass_flow=fuel_injector_mdot,
-                                     nozzle_mass_flow=nozzle_mdot,
-                                     characterstic_velocity_efficiency=eta_cstar)
+                                     nozzle_mass_flow=nozzle_mdot)
 
 mixture_ratio = ox_injector_mdot / fuel_injector_mdot
 
-nozzle = RocketCEANozzle("Nozzle",
+nozzle = RocketCEAChokedNozzle("Nozzle",
                          network=HETS,
                          fuel=fuel,
                          oxidizer=oxidizer,
@@ -117,4 +114,4 @@ Ambient = PressureNode("Atmosphere",
                        pressure=atmospheric_pressure)
 
 
-SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx')
+print(SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx'))
