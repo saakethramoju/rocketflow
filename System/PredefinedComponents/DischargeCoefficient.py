@@ -37,9 +37,7 @@ class DischargeCoefficient(Component):
         Cd = self.Cd.value
         A = self.A.value
 
-        self.mass_flow.value = (
-            np.sign(P1 - P2) * Cd * A * np.sqrt(2.0 * rho * np.abs(P1 - P2))
-        )
+        self.mass_flow.value = np.sign(P1 - P2) * Cd * A * np.sqrt(2.0 * rho * np.abs(P1 - P2))
 
     @property
     def iteration_variables(self) -> list[Variable]:

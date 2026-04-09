@@ -1,6 +1,6 @@
 class Variable:
     def __init__(self, obj):
-        if hasattr(obj, "value"):
+        if hasattr(type(obj), "value"):
             self._state = obj
             self._is_state = True
         elif isinstance(obj, (int, float)):

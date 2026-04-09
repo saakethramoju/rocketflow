@@ -1,8 +1,13 @@
 from System import *
 from Solvers import *
-from constants import PA_PER_PSI
+from constants import PA_PER_PSI, M2_PER_IN2
+
 
 HETS = Network("HETS")
+fuel = 'RP-1'
+oxidizer = 'LOX'
+eta_cstar = 1
+eta_Cf = 1
 
 fuel_tank_pressure = State(400 * PA_PER_PSI)
 ox_tank_pressure = State(400 * PA_PER_PSI)
@@ -15,9 +20,9 @@ ox_runline_mdot = State(0)
 fuel_injector_mdot = State(0)
 ox_injector_mdot = State(0)
 chamber_pressure = State(200 * PA_PER_PSI)
-chamber_density = State(1.6)
 nozzle_mdot = State(0)
-atmospheric_pressure = State(0)
+thrust = State(0)
+atmospheric_pressure = State(101325)
 
 FuelTank = PressureNode("Fuel Tank", 
                         network=HETS,
@@ -80,30 +85,36 @@ OxInjector = DischargeCoefficient("Ox Injector",
                                    cross_sectional_area=0.5e-4,
                                    mass_flow=ox_injector_mdot)
 
-chamber = SimpleIncompressibleVolume("Combustion Chamber",
-                                        network=HETS,
-                                        pressure=chamber_pressure,
-                                        density=chamber_density,
-                                        volume=0.1287,
-                                        mass_flow_in=fuel_injector_mdot + ox_injector_mdot,
-                                        mass_flow_out=nozzle_mdot,
-                                    )
 
+chamber = RocketCEACombustionChamber("Combustion Chamber",
+                                     network=HETS,
+                                     chamber_pressure=chamber_pressure,
+                                     fuel=fuel,
+                                     oxidizer=str,
+                                     oxidizer_mass_flow=ox_injector_mdot,
+                                     fuel_mass_flow=fuel_injector_mdot,
+                                     nozzle_mass_flow=nozzle_mdot,
+                                     characterstic_velocity_efficiency=eta_cstar)
 
-Nozzle = DischargeCoefficient("Nozzle",
-                                   network=HETS,
-                                   upstream_pressure=chamber_pressure,
-                                   downstream_pressure=atmospheric_pressure,
-                                   density=chamber_density,
-                                   discharge_coefficient=1,
-                                   cross_sectional_area=1e-4,
-                                   mass_flow=nozzle_mdot)
+mixture_ratio = ox_injector_mdot / fuel_injector_mdot
+
+nozzle = RocketCEANozzle("Nozzle",
+                         network=HETS,
+                         fuel=fuel,
+                         oxidizer=oxidizer,
+                         chamber_pressure=chamber_pressure,
+                         mixture_ratio=mixture_ratio,
+                         throat_area=6.05*M2_PER_IN2,
+                         expansion_ratio=4,
+                         ambient_pressure=atmospheric_pressure,
+                         characterstic_velocity_efficiency=eta_cstar,
+                         thrust_coefficient_efficiency=eta_Cf,
+                         thrust=thrust,
+                         mass_flow=nozzle_mdot)
 
 Ambient = PressureNode("Atmosphere", 
                        network=HETS,
                        pressure=atmospheric_pressure)
 
-print(HETS)
-solver = SteadyState(HETS)
-df = solver.solve(return_type='dataframe')
-print(df)
+
+SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx')

@@ -27,7 +27,7 @@ class SimpleIncompressibleVolume(Component):
         self.mdot_out = Variable(mass_flow_out)
 
     def pre_evaluation(self) -> None:
-        self.rho.value = 998 * (1 + (self.p.value - 101325) / (2.2e9))
+        pass
 
     def evaluate_states(self) -> None:
         pass

@@ -27,7 +27,7 @@ class Component(ABC):
     @property
     @abstractmethod
     def iteration_variables(self) -> list[Variable]:
-        pass
+        return []
 
     #@abstractmethod
     def pre_evaluation(self) -> None:
@@ -40,7 +40,7 @@ class Component(ABC):
     @property
     @abstractmethod
     def residuals(self) -> list[float]:
-        pass
+        return []
 
     def __str__(self):
         return f"Component ({self.__class__.__name__}: {self.name})"

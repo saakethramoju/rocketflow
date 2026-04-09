@@ -28,3 +28,7 @@ System/PredefinedComponents/__pycache__/Nodes.cpython-313.pyc
 System/PredefinedComponents/__pycache__/Reservoir.cpython-313.pyc
 System/PredefinedComponents/__pycache__/Volumes.cpython-313.pyc
 __pycache__/constants.cpython-313.pyc
+System/PredefinedComponents/__pycache__/CombustionChamber.cpython-313.pyc
+System/PredefinedComponents/__pycache__/Nozzles.cpython-313.pyc
+Utilities/__pycache__/__init__.cpython-313.pyc
+Utilities/__pycache__/RocketCEAUtilities.cpython-313.pyc
