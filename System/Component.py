@@ -4,10 +4,8 @@ from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
 
 
-from System import Variable
-
 if TYPE_CHECKING:
-    from System import Network
+    from System import Network, State
 
 class Component(ABC):
 
@@ -23,7 +21,6 @@ class Component(ABC):
         self.network = network
         self.network.add_component(component=self)
 
-
     #@abstractmethod
     def pre_evaluation(self) -> None:
         pass
@@ -31,7 +28,7 @@ class Component(ABC):
     # never put a derived State in the solver’s iteration-variable list!!!
     @property
     @abstractmethod
-    def iteration_variables(self) -> list[Variable]:
+    def iteration_variables(self) -> list[State]:
         return []
 
     @abstractmethod

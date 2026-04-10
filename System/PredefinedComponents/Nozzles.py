@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from System import Component, Variable
+from System import Component, State
 from Utilities import create_SI_CEA_object
 
 if TYPE_CHECKING:
-    from System import Network, State
+    from System import Network
 
 
 class RocketCEAChokedNozzle(Component):
@@ -21,7 +21,7 @@ class RocketCEAChokedNozzle(Component):
                  throat_area: float,
                  expansion_ratio: float,
                  ambient_pressure: State,
-                 characterstic_velocity_efficiency: State,
+                 characterstic_velocity_efficiency: float,
                  thrust_coefficient_efficiency: float,
                  thrust: State,
                  mass_flow: State):
@@ -29,15 +29,15 @@ class RocketCEAChokedNozzle(Component):
 
         self.fuel = fuel
         self.ox = oxidizer
-        self.Pc = Variable(chamber_pressure)
-        self.MR = Variable(mixture_ratio)
-        self.At = Variable(throat_area)
-        self.eps = Variable(expansion_ratio)
-        self.Pamb = Variable(ambient_pressure)
-        self.F = Variable(thrust)
-        self.mdot = Variable(mass_flow)
-        self.eta_cstar = Variable(characterstic_velocity_efficiency)
-        self.eta_Cf = Variable(thrust_coefficient_efficiency)
+        self.Pc = chamber_pressure
+        self.MR = mixture_ratio
+        self.At = State(throat_area)
+        self.eps = State(expansion_ratio)
+        self.Pamb = ambient_pressure
+        self.F = thrust
+        self.mdot = mass_flow
+        self.eta_cstar = State(characterstic_velocity_efficiency)
+        self.eta_Cf = State(thrust_coefficient_efficiency)
         self._cea_obj = create_SI_CEA_object(self.fuel, self.ox)
 
 
@@ -53,7 +53,7 @@ class RocketCEAChokedNozzle(Component):
          self.F.value = self.eta_Cf.value * Cf_ideal * Pc * At
 
     @property
-    def iteration_variables(self) -> list[Variable]:
+    def iteration_variables(self) -> list[State]:
         return []
 
     @property

@@ -23,7 +23,7 @@ class SteadyState:
         self.network.evaluate_states()
         return np.array(self.network.residuals, dtype=float)
 
-    def solve(self, filename: str | None = None, return_type: str = "dict"):
+    def solve(self, filename: str | None = None, return_type: str = "dict", verbose: bool = True):
         x0 = np.array(self.network.iteration_values, dtype=float)
 
         kwargs = {}
@@ -37,6 +37,18 @@ class SteadyState:
                         self.network.keep_feasible)
 
         sol = least_squares(self.residual, x0, bounds=bounds, **kwargs)
+
+        if verbose:
+            print("********** SOLVER CONVERGENCE **********")
+            print("success:", sol.success)
+            print("status:", sol.status)
+            print("message:", sol.message)
+            print("cost:", sol.cost)
+            print("optimality:", sol.optimality)
+            print("nfev:", sol.nfev)
+            print("x:", sol.x)
+            print("fun:", sol.fun)
+            print("max abs residual:", np.max(np.abs(sol.fun)))
 
         # assign final solution back into network
         self.network.assign_iteration_values(list(sol.x))

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from System import Component, Variable
+    from System import Component, State, Balance
 
 
 class Network:
@@ -11,65 +11,73 @@ class Network:
     def __init__(self, name: str):
         self.name = name
         self.component_list = []
-        self._iter_var_cache = None # iteration variable list[str]
-        self._iter_var_name_cache = None # iteration variable list[Variable]
-
-    def _clear_cache(self) -> None:
-        self._iter_var_cache = None
-        self._iter_var_name_cache = None
+        self.balance_list = []
 
     def add_component(self, component: Component) -> None:
         self.component_list.append(component)
-        self._clear_cache()
+
+    def add_balance(self, balance: Balance) -> None:
+        self.balance_list.append(balance)
 
     @property
     def components(self) -> list[str]:
         return [c.name for c in self.component_list]
 
+    @property
+    def balances(self) -> list[str]:
+        return [b.name for b in self.balance_list]
 
 
     # -------------- STEADY-STATE -------------- #
 
     @property
     def lower_bounds(self) -> list[float]:
-        return [var.lower_bound for var in self.collect_iteration_variables()]
+        return [var.lower_bound for var in self.collect_all_iteration_variables()]
     
     @property
     def upper_bounds(self) -> list[float]:
-        return [var.upper_bound for var in self.collect_iteration_variables()]
+        return [var.upper_bound for var in self.collect_all_iteration_variables()]
     
     @property
-    def keep_feasible(self) -> list[bool]:
-        return [var.keep_feasible for var in self.collect_iteration_variables()]
-    
+    def keep_feasible(self) -> list[float]:
+        return [var.keep_feasible for var in self.collect_all_iteration_variables()]
+
+            
+
     @property
-    def iteration_variables(self) -> list[str]:
-        if self._iter_var_name_cache is None:
-            names = []
-            for comp in self.component_list:
-                comp_iter_vars = comp.iteration_variables
-                comp_iter_var_ids = {id(var) for var in comp_iter_vars}
+    def iteration_variables(self) -> str:
+        names = []
 
-                for attr_name, attr_value in comp.__dict__.items():
-                    if id(attr_value) in comp_iter_var_ids:
-                        names.append(f"{comp.name}:{attr_name}")
+        def find_name(obj, target):
+            for k, v in obj.__dict__.items():
+                if v is target:
+                    return f"{obj.name}:{k}"
+            return f"{obj.name}:<unknown>"
 
-            self._iter_var_name_cache = names
+        # components
+        for comp in self.component_list:
+            for var in comp.iteration_variables:
+                names.append(find_name(comp, var))
 
-        return self._iter_var_name_cache
-    
+        # balances
+        for bal in self.balance_list:
+            for var in bal.iteration_variables:
+                names.append(find_name(bal, var))
+
+        return "\n".join(names)
+            
 
     @property
     def iteration_values(self) -> list[float]:
-        return [var.value for var in self.collect_iteration_variables()]
-    
+        self._validate_no_iteration_overlap()
+        return [var.value for var in self.collect_all_iteration_variables()]
 
     @property
     def residuals(self) -> list[float]:
-        residuals = []
-        for comp in self.component_list:
-            residuals.extend(comp.residuals)
-        return residuals
+        return (
+            [r for comp in self.component_list for r in comp.residuals]
+            + [r for bal in self.balance_list for r in bal.residuals]
+        )
 
 
     def pre_evaluation(self) -> None:
@@ -81,18 +89,26 @@ class Network:
             c.evaluate_states()
 
 
-    def collect_iteration_variables(self) -> list[Variable]:
-        if self._iter_var_cache is None:
-            iter_vars = []
-            for comp in self.component_list:
-                iter_vars.extend(comp.iteration_variables)
-            self._iter_var_cache = iter_vars
+    def collect_iteration_variables(self) -> list[State]:
+        iter_vars = []
+        for comp in self.component_list:
+            iter_vars.extend(comp.iteration_variables)
 
-        return self._iter_var_cache
+        return iter_vars
+    
+    def collect_balance_iteration_variables(self) -> list[State]:
+        iter_vars = []
+        for bal in self.balance_list:
+            iter_vars.extend(bal.iteration_variables)
+
+        return iter_vars
+    
+    def collect_all_iteration_variables(self) -> list[State]:
+        return (self.collect_iteration_variables() + self.collect_balance_iteration_variables())
 
 
     def assign_iteration_values(self, iteration_values: list[float]) -> None:
-        iter_var_list = self.collect_iteration_variables()
+        iter_var_list = self.collect_all_iteration_variables()
         if len(iteration_values) != len(iter_var_list):
             raise ValueError(
                 f"Length mismatch: got {len(iteration_values)} iteration values "
@@ -101,6 +117,59 @@ class Network:
         for val, var in zip(iteration_values, iter_var_list):
             var.value = val
 
+    
+
+    def _validate_no_iteration_overlap(self) -> None:
+        comp_ids = {id(v) for v in self.collect_iteration_variables()}
+        bal_ids = {id(v) for v in self.collect_balance_iteration_variables()}
+        overlap_ids = comp_ids & bal_ids
+
+        if overlap_ids:
+            raise ValueError(self._format_iteration_overlap_error(overlap_ids))
+    
+
+    def _format_iteration_overlap_error(self, overlap_ids: set[int]) -> str:
+        component_names = []
+        balance_names = []
+
+        for comp in self.component_list:
+            comp_iter_ids = {id(v) for v in comp.iteration_variables}
+            shared_ids = comp_iter_ids & overlap_ids
+            if not shared_ids:
+                continue
+
+            for attr_name, attr_value in comp.__dict__.items():
+                if id(attr_value) in shared_ids:
+                    component_names.append(f"{comp.name}:{attr_name}")
+
+        for bal in self.balance_list:
+            bal_iter_ids = {id(v) for v in bal.iteration_variables}
+            shared_ids = bal_iter_ids & overlap_ids
+            if not shared_ids:
+                continue
+
+            # show both the balance name and its variable attribute
+            for attr_name, attr_value in bal.__dict__.items():
+                if id(attr_value) in shared_ids:
+                    balance_names.append(f"{bal.name}:{attr_name}")
+
+        component_names = sorted(set(component_names))
+        balance_names = sorted(set(balance_names))
+
+        lines = [
+            "Iteration variable overlap detected.",
+            "",
+            "Balance iteration variables cannot be the same as component iteration variables.",
+            "A State used as a Balance solve variable must not also appear in a Component iteration_variables list.",
+            "",
+            "Overlapping component variables:",
+            *[f"  - {name}" for name in component_names],
+            "",
+            "Conflicting balance variables:",
+            *[f"  - {name}" for name in balance_names],
+        ]
+
+        return "\n".join(lines)
 
     # -------------- SOLUTION EXPORTING -------------- #
 
@@ -117,16 +186,19 @@ class Network:
                 if attr_name in {"name", "network"} or attr_name.startswith("_"):
                     continue
 
-                # pretty formatting for Variables vs other types
-                if hasattr(attr_value, "value"):
-                    val_str = f"{attr_value.value:.4g}"
+                # pretty formatting for State-like objects vs other types
+                if hasattr(type(attr_value), "value"):
+                    try:
+                        val = attr_value.value
+                        val_str = f"{val:.4g}"
+                    except (ValueError, AttributeError):
+                        val_str = "—"
                 else:
                     val_str = str(attr_value)
 
                 lines.append(f"  │   {attr_name:<12}: {val_str}")
 
         return "\n".join(lines)
-    
 
 
     def save(

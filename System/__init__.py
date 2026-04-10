@@ -1,5 +1,5 @@
 from .Component import *
-from .Variable import *
 from .State import *
+from .Balance import *
 from .PredefinedComponents import *
 from .Network import *

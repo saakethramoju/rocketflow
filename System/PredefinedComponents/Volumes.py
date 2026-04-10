@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from System import Component, Variable
+from System import Component, State
 
 if TYPE_CHECKING:
-    from System import Network, State
+    from System import Network
 
 
 class SimpleIncompressibleVolume(Component):
@@ -20,11 +20,11 @@ class SimpleIncompressibleVolume(Component):
                  mass_flow_out: State):
         self.initialize_component(name, network)
 
-        self.p = Variable(pressure)
-        self.rho = Variable(density)
-        self.V = Variable(volume)
-        self.mdot_in = Variable(mass_flow_in)
-        self.mdot_out = Variable(mass_flow_out)
+        self.p = pressure
+        self.rho = density
+        self.V = volume
+        self.mdot_in = mass_flow_in
+        self.mdot_out = mass_flow_out
 
     def pre_evaluation(self) -> None:
         pass
@@ -33,7 +33,7 @@ class SimpleIncompressibleVolume(Component):
         pass
 
     @property
-    def iteration_variables(self) -> list[Variable]:
+    def iteration_variables(self) -> list[State]:
         return [self.p]
 
     @property

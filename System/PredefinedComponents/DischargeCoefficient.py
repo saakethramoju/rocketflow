@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 from typing import TYPE_CHECKING
 
-from System import Component, Variable
+from System import Component, State
 
 if TYPE_CHECKING:
-    from System import Network, State
+    from System import Network
 
 
 
@@ -23,12 +23,12 @@ class DischargeCoefficient(Component):
                  mass_flow: State):
         self.initialize_component(name, network)
 
-        self.upstream_pressure = Variable(upstream_pressure)
-        self.downstream_pressure = Variable(downstream_pressure)
-        self.density = Variable(density)
-        self.mass_flow = Variable(mass_flow)
-        self.Cd = Variable(discharge_coefficient)
-        self.A = Variable(cross_sectional_area)
+        self.upstream_pressure = upstream_pressure
+        self.downstream_pressure = downstream_pressure
+        self.density = density
+        self.mass_flow = mass_flow
+        self.Cd = State(discharge_coefficient)
+        self.A = State(cross_sectional_area)
 
     def evaluate_states(self) -> None:
         P1 = self.upstream_pressure.value
@@ -40,7 +40,7 @@ class DischargeCoefficient(Component):
         self.mass_flow.value = np.sign(P1 - P2) * Cd * A * np.sqrt(2.0 * rho * np.abs(P1 - P2))
 
     @property
-    def iteration_variables(self) -> list[Variable]:
+    def iteration_variables(self) -> list[State]:
         return []
 
     @property

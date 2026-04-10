@@ -9,10 +9,10 @@ oxidizer = 'LOX'
 eta_cstar = 1
 eta_Cf = 1
 
-fuel_tank_pressure = State(550 * PA_PER_PSI)
-ox_tank_pressure = State(500 * PA_PER_PSI)
-fuel_inj_pressure = State(300 * PA_PER_PSI, bounds=(100*PA_PER_PSI, 600*PA_PER_PSI))
-ox_inj_pressure = State(300 * PA_PER_PSI, keep_feasible=True)
+fuel_tank_pressure = State(500 * PA_PER_PSI)
+ox_tank_pressure = State(550 * PA_PER_PSI)
+fuel_inj_pressure = State(300 * PA_PER_PSI)#, bounds=(100*PA_PER_PSI, 600*PA_PER_PSI))
+ox_inj_pressure = State(300 * PA_PER_PSI)#, keep_feasible=True)
 fuel_density = State(800)
 ox_density = State(1104)
 fuel_runline_mdot = State()
@@ -86,7 +86,7 @@ OxInjector = DischargeCoefficient("Ox Injector",
                                    mass_flow=ox_injector_mdot)
 
 
-chamber = RocketCEACombustionChamber("Combustion Chamber",
+Chamber = RocketCEACombustionChamber("Combustion Chamber",
                                      network=HETS,
                                      chamber_pressure=chamber_pressure,
                                      oxidizer_mass_flow=ox_injector_mdot,
@@ -95,7 +95,7 @@ chamber = RocketCEACombustionChamber("Combustion Chamber",
 
 mixture_ratio = ox_injector_mdot / fuel_injector_mdot
 
-nozzle = RocketCEAChokedNozzle("Nozzle",
+Nozzle = RocketCEAChokedNozzle("Nozzle",
                          network=HETS,
                          fuel=fuel,
                          oxidizer=oxidizer,
@@ -112,6 +112,19 @@ nozzle = RocketCEAChokedNozzle("Nozzle",
 Ambient = PressureNode("Atmosphere", 
                        network=HETS,
                        pressure=atmospheric_pressure)
+'''
+line_balance = Balance("Fuel Stiffness Balance",
+                       network=HETS,
+                       variable=FuelInjector.A,
+                       function=(FuelInjectorManifold.p - Chamber.Pc) / Chamber.Pc - 0.2,
+                       bounds=(0.01e-4, None))
+'''
+ox_tank_balance = Balance("Balance Ox Tank pressure until MR = 3",
+                          network=HETS,
+                          variable=ox_tank_pressure,
+                          function=mixture_ratio - 3)
 
+print(SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx', verbose=True))
 
-print(SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx'))
+#print(f"Fuel Injector Stiffness: {(FuelInjectorManifold.p - Chamber.Pc) * 100 / Chamber.Pc:.2f} %")
+print(f"Mixture Ratio : {mixture_ratio}")

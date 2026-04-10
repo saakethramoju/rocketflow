@@ -344,3 +344,6 @@ class State:
     def copysign(self, other):
         other = self._coerce(other)
         return State(expr=lambda: math.copysign(self.value, other.value))
+    
+    def __format__(self, format_spec: str) -> str:
+        return format(self.value, format_spec)
