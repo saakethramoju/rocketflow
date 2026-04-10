@@ -21,6 +21,7 @@ class Balance:
         self.name = name
         self.network = network
 
+
         if variable.is_derived:
             raise TypeError("variable cannot be a derived State.")
         else:

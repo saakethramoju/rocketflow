@@ -1,18 +1,18 @@
 from System import *
 from Solvers import *
-from constants import PA_PER_PSI, M2_PER_IN2
+from constants import PA_PER_PSI, M2_PER_IN2, N_PER_LBF
 
 
 HETS = Network("HETS")
 fuel = 'RP-1'
 oxidizer = 'LOX'
 eta_cstar = 1
-eta_Cf = 1
+eta_Cf = 0.95
 
 fuel_tank_pressure = State(500 * PA_PER_PSI)
 ox_tank_pressure = State(550 * PA_PER_PSI)
-fuel_inj_pressure = State(300 * PA_PER_PSI)#, bounds=(100*PA_PER_PSI, 600*PA_PER_PSI))
-ox_inj_pressure = State(300 * PA_PER_PSI)#, keep_feasible=True)
+fuel_inj_pressure = State(300 * PA_PER_PSI)
+ox_inj_pressure = State(300 * PA_PER_PSI)
 fuel_density = State(800)
 ox_density = State(1104)
 fuel_runline_mdot = State()
@@ -112,19 +112,20 @@ Nozzle = RocketCEAChokedNozzle("Nozzle",
 Ambient = PressureNode("Atmosphere", 
                        network=HETS,
                        pressure=atmospheric_pressure)
-'''
-line_balance = Balance("Fuel Stiffness Balance",
-                       network=HETS,
-                       variable=FuelInjector.A,
-                       function=(FuelInjectorManifold.p - Chamber.Pc) / Chamber.Pc - 0.2,
-                       bounds=(0.01e-4, None))
-'''
-ox_tank_balance = Balance("Balance Ox Tank pressure until MR = 3",
+
+thrust_balance = Balance("Balance eta_cF for thrust",
                           network=HETS,
-                          variable=ox_tank_pressure,
-                          function=mixture_ratio - 3)
+                          variable=Nozzle.eta_Cf,
+                          function=Nozzle.F - 200*N_PER_LBF,
+                          bounds=(0, 1),)
+                          #keep_feasible=True)
+
+Pc_balance = Balance("Balance ox inj for Pc",
+                          network=HETS,
+                          variable=OxInjector.A,
+                          function=Chamber.Pc - 300*PA_PER_PSI)
 
 print(SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx', verbose=True))
 
-#print(f"Fuel Injector Stiffness: {(FuelInjectorManifold.p - Chamber.Pc) * 100 / Chamber.Pc:.2f} %")
-print(f"Mixture Ratio : {mixture_ratio}")
+print(f"Pc: {Chamber.Pc / PA_PER_PSI}")
+print(f"F: {Nozzle.F / N_PER_LBF}")

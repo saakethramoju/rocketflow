@@ -26,29 +26,15 @@ class SteadyState:
     def solve(self, filename: str | None = None, return_type: str = "dict", verbose: bool = True):
         x0 = np.array(self.network.iteration_values, dtype=float)
 
-        kwargs = {}
 
-        # least_squares methods: 'trf', 'dogbox', 'lm'
-        if self.method is not None:
-            kwargs["method"] = self.method
 
         bounds = Bounds(self.network.lower_bounds, 
                         self.network.upper_bounds,
                         self.network.keep_feasible)
 
-        sol = least_squares(self.residual, x0, bounds=bounds, **kwargs)
+        sol = least_squares(self.residual, x0, bounds=bounds)
 
-        if verbose:
-            print("********** SOLVER CONVERGENCE **********")
-            print("success:", sol.success)
-            print("status:", sol.status)
-            print("message:", sol.message)
-            print("cost:", sol.cost)
-            print("optimality:", sol.optimality)
-            print("nfev:", sol.nfev)
-            print("x:", sol.x)
-            print("fun:", sol.fun)
-            print("max abs residual:", np.max(np.abs(sol.fun)))
+        if verbose: self._verbose_print(sol)
 
         # assign final solution back into network
         self.network.assign_iteration_values(list(sol.x))
@@ -58,3 +44,50 @@ class SteadyState:
         solution = self.network.save(filename=filename, return_type=return_type)
 
         return solution
+    
+
+    def _verbose_print(self, sol) -> None:
+        print("\n" + "="*50)
+        print("        STEADY-STATE SOLVER SUMMARY")
+        print("="*50)
+
+        print("\n[Convergence]")
+        print(f"  Success        : {sol.success}")
+        print(f"  Status         : {sol.status}")
+        print(f"  Message        : {sol.message}")
+
+        print("\n[Performance]")
+        print(f"  Function evals : {sol.nfev}")
+        if hasattr(sol, "njev"):
+            print(f"  Jacobian evals : {sol.njev}")
+
+        print("\n[Optimality]")
+        if hasattr(sol, "cost"):
+            print(f"  Cost (½‖r‖²)   : {sol.cost:.6e}")
+        if hasattr(sol, "optimality"):
+            print(f"  Optimality     : {sol.optimality:.3e}")
+
+        print("\n[Solution Variables]")
+        iter_vars = self.network.iteration_variables
+        if isinstance(iter_vars, str):
+            iter_vars = [iter_vars]
+
+        if len(iter_vars) == len(sol.x):
+            for name, val in zip(iter_vars, sol.x):
+                print(f"  {str(name):<40} = {val:.6e}")
+        else:
+            for i, val in enumerate(sol.x):
+                print(f"  x[{i:<2}] {'':<34} = {val:.6e}")
+
+        print("\n[Residuals]")
+        for i, r in enumerate(sol.fun):
+            print(f"  r[{i:<2}] {'':<34} = {r:.3e}")
+
+        max_resid = np.max(np.abs(sol.fun))
+        rms_resid = np.sqrt(np.mean(sol.fun**2))
+
+        print("\n[Residual Summary]")
+        print(f"  Max |residual| : {max_resid:.3e}")
+        print(f"  RMS residual   : {rms_resid:.3e}")
+
+        print("="*50 + "\n")

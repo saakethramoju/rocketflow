@@ -39,6 +39,10 @@ class Network:
         return [var.upper_bound for var in self.collect_all_iteration_variables()]
     
     @property
+    def has_bounds(self) -> bool:
+        return any([var.has_bounds for var in self.collect_all_iteration_variables()])
+    
+    @property
     def keep_feasible(self) -> list[float]:
         return [var.keep_feasible for var in self.collect_all_iteration_variables()]
 

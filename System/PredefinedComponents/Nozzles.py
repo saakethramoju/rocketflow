@@ -42,15 +42,18 @@ class RocketCEAChokedNozzle(Component):
 
 
     def evaluate_states(self) -> None:
-         Pc = self.Pc.value
-         MR = self.MR.value
-         At = self.At.value
+        Pc = self.Pc.value
+        MR = self.MR.value
+        At = self.At.value
 
-         cstar_ideal = self._cea_obj.get_Cstar(Pc, MR)
-         _, Cf_ideal, _ = self._cea_obj.get_PambCf(self.Pamb.value, Pc, MR, self.eps.value)
+        Pc = self.Pc.value
+        MR = self.MR.value
 
-         self.mdot.value = Pc * At / (self.eta_cstar.value * cstar_ideal)
-         self.F.value = self.eta_Cf.value * Cf_ideal * Pc * At
+        cstar_ideal = self._cea_obj.get_Cstar(Pc, MR)
+        _, Cf_ideal, _ = self._cea_obj.get_PambCf(self.Pamb.value, Pc, MR, self.eps.value)
+
+        self.mdot.value = Pc * At / (self.eta_cstar.value * cstar_ideal)
+        self.F.value = self.eta_Cf.value * Cf_ideal * Pc * At
 
     @property
     def iteration_variables(self) -> list[State]:
