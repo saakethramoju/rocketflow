@@ -21,6 +21,7 @@ class Fluid:
         "jet-a": "nDodecane",
         "jeta": "nDodecane",
         "kerosene": "nDodecane",
+        "lox": "Oxygen"
     }
 
     def __init__(

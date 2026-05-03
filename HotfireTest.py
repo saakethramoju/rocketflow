@@ -116,8 +116,8 @@ Ambient = PressureNode("Atmosphere",
 thrust_balance = Balance("Balance eta_cF for thrust",
                           network=HETS,
                           variable=Nozzle.eta_Cf,
-                          function=Nozzle.F - 200*N_PER_LBF,
-                          bounds=(0, 1),)
+                          function=Nozzle.F - 200*N_PER_LBF,)
+                          #bounds=(0, 1),)
                           #keep_feasible=True)
 
 Pc_balance = Balance("Balance ox inj for Pc",
@@ -125,7 +125,7 @@ Pc_balance = Balance("Balance ox inj for Pc",
                           variable=OxInjector.A,
                           function=Chamber.Pc - 300*PA_PER_PSI)
 
-print(SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx', verbose=True))
+print(SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx', verbose=False))
 
 print(f"Pc: {Chamber.Pc / PA_PER_PSI}")
 print(f"F: {Nozzle.F / N_PER_LBF}")

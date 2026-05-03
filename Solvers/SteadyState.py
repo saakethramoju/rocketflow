@@ -11,11 +11,9 @@ if TYPE_CHECKING:
 class SteadyState:
 
     def __init__(self,
-                 network: Network,
-                 method: str | None = None):
+                 network: Network):
 
         self.network = network
-        self.method = method
 
     def residual(self, x: np.ndarray) -> np.ndarray:
         self.network.assign_iteration_values(list(x))
