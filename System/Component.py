@@ -39,6 +39,14 @@ class Component(ABC):
     @abstractmethod
     def residuals(self) -> list[float]:
         return []
+    
+    @property
+    def timestep_variables(self) -> list[State]:
+        return []
+    
+    @property
+    def time_derivative(self) -> list[State]:
+        return []
 
     def __str__(self):
         return f"Component ({self.__class__.__name__}: {self.name})"
