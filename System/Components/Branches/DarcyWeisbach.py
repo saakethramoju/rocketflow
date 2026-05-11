@@ -10,4 +10,11 @@ if TYPE_CHECKING:
 
 
 class DarcyWeisbach(Component):
-    pass
+    
+    def __init__(self, 
+                 name: str, 
+                 network: Network,
+                 upstream_pressure: State,
+                 downstream_pressure: State,
+                 ):
+        super().__init__(name, network)

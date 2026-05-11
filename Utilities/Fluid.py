@@ -27,6 +27,7 @@ class Fluid:
         "jeta": "n-Dodecane",
         "kerosene": "n-Dodecane",
         "lox": "Oxygen",
+        "water": "Water"
     }
 
     _PHASE_NAMES = {
@@ -290,6 +291,24 @@ class Fluid:
     def temperature(self) -> float:
         """Absolute temperature in K."""
         return float(self._backend.T())
+    
+    @temperature.setter
+    def temperature(self, value: float):
+        """
+        Update temperature while holding pressure constant.
+
+        Requires pressure to already be defined.
+        """
+        if self._P is None:
+            raise ValueError(
+                "Cannot set temperature without pressure. "
+                "Set pressure first."
+            )
+
+        T = float(value)
+
+        self._h = self._enthalpy_from_PT(self._P, T)
+        self.set_pyfluid()
 
     @property
     def phase(self) -> str:
@@ -480,6 +499,27 @@ class Fluid:
         if ph in ("Liquid", "SupercriticalLiquid"):
             return 0.0
         return float("nan")
+    
+    @quality.setter
+    def quality(self, value: float):
+        """
+        Update vapor quality while holding pressure constant.
+
+        Requires pressure to already be defined.
+        """
+        if self._P is None:
+            raise ValueError(
+                "Cannot set quality without pressure. "
+                "Set pressure first."
+            )
+
+        Q = float(value)
+
+        if not (0.0 <= Q <= 1.0):
+            raise ValueError("Quality must be between 0 and 1.")
+
+        self._h = self._enthalpy_from_PQ(self._P, Q)
+        self.set_pyfluid()
 
     @property
     def saturation_temperature(self) -> float:

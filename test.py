@@ -12,12 +12,10 @@ SimpleNetwork = Network("Simple Network")
 
 source_pressure = State(3e5)
 source_temperature = State(300)
-source_density = State()
 
 line1_mdot = State()
 
 manifold_pressure = State(2e5)
-manifold_density = State()
 
 line2_mdot = State()
 
@@ -28,15 +26,15 @@ atmospheric_pressure = State(101325)
 #Fluid.add_alias("water", "Water")
 fluid = 'jeta'
 
-source_fluid = DensityfromPT("Source Fluid", SimpleNetwork, fluid,
+source_fluid = GeneralFluidLookupfromPT("Source Fluid", SimpleNetwork, fluid,
                              pressure=source_pressure,
-                             temperature=source_temperature,
-                             density=source_density)
+                             temperature=source_temperature,)
+                             #density=source_density)
 
-manifold_fluid = DensityfromPT("Manifold Fluid", SimpleNetwork, fluid,
+manifold_fluid = GeneralFluidLookupfromPT("Manifold Fluid", SimpleNetwork, fluid,
                              pressure=manifold_pressure,
-                             temperature=source_temperature,
-                             density=manifold_density)
+                             temperature=source_temperature,)
+                             #density=manifold_density)
 
 
 
