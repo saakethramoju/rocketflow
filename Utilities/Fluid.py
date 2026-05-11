@@ -536,17 +536,50 @@ class Fluid:
 
     # ---------------- Utilities ---------------- #
     @staticmethod
-    def _normalize_name(user_name: str) -> Tuple[str, str]:
+    def _alias_key(name: str) -> str:
+        return name.strip().lower().replace(" ", "").replace("_", "-")
+
+
+    @classmethod
+    def _normalize_name(cls, user_name: str) -> Tuple[str, str]:
         """
         Return (backend_name, display_name). If user_name is an alias, map it to
         the CoolProp backend name but preserve user input for display.
         """
         display = user_name
-        key = user_name.strip().lower()
-        key = key.replace(" ", "")
-        key = key.replace("_", "-")
-        backend = Fluid._ALIASES.get(key, user_name)
+        key = cls._alias_key(user_name)
+        backend = cls._ALIASES.get(key, user_name)
         return backend, display
+
+
+    @classmethod
+    def add_alias(cls, alias: str, coolprop_name: str) -> None:
+        cls._ALIASES[cls._alias_key(alias)] = coolprop_name
+
+
+    @classmethod
+    def add_aliases(cls, aliases: dict[str, str]) -> None:
+        for alias, coolprop_name in aliases.items():
+            cls.add_alias(alias, coolprop_name)
+
+
+    @classmethod
+    def remove_alias(cls, alias: str) -> None:
+        cls._ALIASES.pop(cls._alias_key(alias), None)
+
+
+    @classmethod
+    def show_aliases(cls) -> dict[str, str]:
+
+        width = max(len(alias) for alias in cls._ALIASES)
+
+        print("Fluid Aliases")
+        print("-" * (width + 20))
+
+        for alias, backend in sorted(cls._ALIASES.items()):
+            print(f"{alias:<{width}} -> {backend}")
+
+        return dict(cls._ALIASES)
 
     @staticmethod
     def _molar_mass_of(fluid: str) -> float:

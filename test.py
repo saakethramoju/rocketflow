@@ -1,5 +1,6 @@
 from System import *
 from Solvers import *
+from Utilities import Fluid
 
 
 from constants import *
@@ -24,14 +25,15 @@ atmospheric_pressure = State(101325)
 
 # --- Fluid Definition ---
 
-fluid = "RP-1"
+#Fluid.add_alias("water", "Water")
+fluid = 'jeta'
 
-source_fluid = DensityfromPT("Source Fluid", SimpleNetwork, "Water",
+source_fluid = DensityfromPT("Source Fluid", SimpleNetwork, fluid,
                              pressure=source_pressure,
                              temperature=source_temperature,
                              density=source_density)
 
-manifold_fluid = DensityfromPT("Manifold Fluid", SimpleNetwork, "Water",
+manifold_fluid = DensityfromPT("Manifold Fluid", SimpleNetwork, fluid,
                              pressure=manifold_pressure,
                              temperature=source_temperature,
                              density=manifold_density)
@@ -76,6 +78,8 @@ Ambient = PressureBoundary("Atmoshere", SimpleNetwork,
 
 
 
-print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True))
+print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=False))
 
 print(SimpleNetwork)
+
+Fluid.show_aliases()

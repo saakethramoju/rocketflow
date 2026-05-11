@@ -179,28 +179,14 @@ class Network:
 
     def __str__(self) -> str:
         lines = []
+
         lines.append(f"Network: {self.name}")
         lines.append(f"Components ({len(self.component_list)}):")
 
         for comp in self.component_list:
-            lines.append(f"  ├─ [{comp.__class__.__name__}]: {comp.name}")
-
-            for attr_name, attr_value in comp.__dict__.items():
-                # skip noisy/internal attributes
-                if attr_name in {"name", "network"} or attr_name.startswith("_"):
-                    continue
-
-                # pretty formatting for State-like objects vs other types
-                if hasattr(type(attr_value), "value"):
-                    try:
-                        val = attr_value.value
-                        val_str = f"{val:.4g}"
-                    except (ValueError, AttributeError):
-                        val_str = "—"
-                else:
-                    val_str = str(attr_value)
-
-                lines.append(f"  │   {attr_name:<12}: {val_str}")
+            lines.append(
+                f"  ├─ [{comp.__class__.__name__}]: {comp.name}"
+            )
 
         return "\n".join(lines)
 
