@@ -9,27 +9,13 @@ if TYPE_CHECKING:
     from System import Network
 
 
-
-
 class PressureBoundary(Component):
 
     def __init__(self, 
                  name: str,
                  network: Network,
                  pressure: State):
-        self.initialize_component(name, network)
-        self.pressure = pressure
-
-    def evaluate_states(self) -> None:
-        pass
-
-    @property
-    def iteration_variables(self) -> list[State]:
-        return []
-    
-    @property
-    def residuals(self) -> list[float]:
-        return []
+        self.setup()
     
 
 class IsothermalPressureBoundary(Component):
@@ -40,18 +26,5 @@ class IsothermalPressureBoundary(Component):
                  pressure: State,
                  density: State,
                  temperature: State):
-        self.initialize_component(name, network)
-        self.pressure = pressure
-        self.density = density
-        self.temperature = temperature
-
-    def evaluate_states(self) -> None:
-        pass
-
-    @property
-    def iteration_variables(self) -> list[State]:
-        return []
-    
-    @property
-    def residuals(self) -> list[float]:
-        return []
+        
+        self.setup()

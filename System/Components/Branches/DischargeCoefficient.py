@@ -20,30 +20,14 @@ class DischargeCoefficient(Component):
                  density: State,
                  discharge_coefficient: float,
                  cross_sectional_area: float,
-                 mass_flow: State):
-        self.initialize_component(name, network)
-
-        self.upstream_pressure = upstream_pressure
-        self.downstream_pressure = downstream_pressure
-        self.density = density
-        self.mass_flow = mass_flow
-        self.Cd = State(discharge_coefficient)
-        self.A = State(cross_sectional_area)
+                 mass_flow: State | None = None):
+        self.setup()
 
     def evaluate_states(self) -> None:
         P1 = self.upstream_pressure.value
         P2 = self.downstream_pressure.value
         rho = self.density.value
-        Cd = self.Cd.value
-        A = self.A.value
+        Cd = self.discharge_coefficient.value
+        A = self.cross_sectional_area.value
 
         self.mass_flow.value = np.sign(P1 - P2) * Cd * A * np.sqrt(2.0 * rho * np.abs(P1 - P2))
-
-
-    @property
-    def iteration_variables(self) -> list[State]:
-        return []
-
-    @property
-    def residuals(self) -> list[float]:
-        return []

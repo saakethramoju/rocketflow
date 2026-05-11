@@ -17,48 +17,25 @@ class RocketCEAChokedNozzle(Component):
                  fuel: str,
                  oxidizer: str,
                  chamber_pressure: State,
-                 mixture_ratio: State,
                  throat_area: float,
                  expansion_ratio: float,
                  ambient_pressure: State,
                  characterstic_velocity_efficiency: float,
                  thrust_coefficient_efficiency: float,
-                 thrust: State,
-                 mass_flow: State):
-        self.initialize_component(name, network)
-
-        self.fuel = fuel
-        self.ox = oxidizer
-        self.Pc = chamber_pressure
-        self.MR = mixture_ratio
-        self.At = State(throat_area)
-        self.eps = State(expansion_ratio)
-        self.Pamb = ambient_pressure
-        self.F = thrust
-        self.mdot = mass_flow
-        self.eta_cstar = State(characterstic_velocity_efficiency)
-        self.eta_Cf = State(thrust_coefficient_efficiency)
+                 mixture_ratio: State | None = None,
+                 thrust: State | None = None,
+                 mass_flow: State | None = None):
+        self.setup()
         self._cea_obj = create_SI_CEA_object(self.fuel, self.ox)
 
 
     def evaluate_states(self) -> None:
-        Pc = self.Pc.value
-        MR = self.MR.value
-        At = self.At.value
-
-        Pc = self.Pc.value
-        MR = self.MR.value
+        Pc = self.chamber_pressure.value
+        MR = self.mixture_ratio.value
+        At = self.throat_area.value
 
         cstar_ideal = self._cea_obj.get_Cstar(Pc, MR)
-        _, Cf_ideal, _ = self._cea_obj.get_PambCf(self.Pamb.value, Pc, MR, self.eps.value)
+        _, Cf_ideal, _ = self._cea_obj.get_PambCf(self.ambient_pressure.value, Pc, MR, self.expansion_ratio.value)
 
-        self.mdot.value = Pc * At / (self.eta_cstar.value * cstar_ideal)
-        self.F.value = self.eta_Cf.value * Cf_ideal * Pc * At
-
-    @property
-    def iteration_variables(self) -> list[State]:
-        return []
-
-    @property
-    def residuals(self) -> list[float]:
-        return []
+        self.mass_flow.value = Pc * At / (self.characterstic_velocity_efficiency.value * cstar_ideal)
+        self.thrust.value = self.thrust_coefficient_efficiency.value * Cf_ideal * Pc * At

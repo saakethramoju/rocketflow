@@ -14,23 +14,15 @@ class RocketCEACombustionChamber(Component):
                  name: str, 
                  network: Network,
                  chamber_pressure: State,
-                 oxidizer_mass_flow : State,
-                 fuel_mass_flow: State, 
-                 nozzle_mass_flow: State):
-        self.initialize_component(name, network)
-
-        self.Pc = chamber_pressure
-        self.ox_mdot = oxidizer_mass_flow
-        self.fuel_mdot = fuel_mass_flow
-        self.nozzle_mdot = nozzle_mass_flow
+                 oxidizer_mass_flow : State | None = None,
+                 fuel_mass_flow: State | None = None, 
+                 nozzle_mass_flow: State | None = None):
+        self.setup()
 
     @property
     def iteration_variables(self) -> list[State]:
-        return [self.Pc]
-
-    def evaluate_states(self) -> None:
-        pass
+        return [self.chamber_pressure]
 
     @property
     def residuals(self) -> list[float]:
-        return [self.fuel_mdot.value + self.ox_mdot.value - self.nozzle_mdot.value]
+        return [self.fuel_mass_flow.value + self.oxidizer_mass_flow.value - self.nozzle_mass_flow.value]

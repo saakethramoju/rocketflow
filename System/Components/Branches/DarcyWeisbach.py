@@ -16,5 +16,6 @@ class DarcyWeisbach(Component):
                  network: Network,
                  upstream_pressure: State,
                  downstream_pressure: State,
+                 darcy_friction_factor: State,
                  ):
-        super().__init__(name, network)
+        pass

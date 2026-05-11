@@ -35,11 +35,7 @@ class GeneralFluidLookupfromPT(Component):
         temperature: State,
         **property_states: State,
     ):
-        self.initialize_component(name, network)
-
-        self.fluid = fluid
-        self.pressure = pressure
-        self.temperature = temperature
+        self.setup()
 
         # Persistent Fluid wrapper reused every evaluation.
         # Avoids repeatedly constructing Fluid objects.
@@ -154,16 +150,6 @@ class GeneralFluidLookupfromPT(Component):
             property,
         )
 
-    @property
-    def iteration_variables(self) -> list[State]:
-        """No iteration variables."""
-        return []
-
-    @property
-    def residuals(self) -> list[float]:
-        """No residual equations."""
-        return []
-
 
 
 class DensityfromPT(Component):
@@ -175,16 +161,8 @@ class DensityfromPT(Component):
                  pressure: State,
                  temperature: State,
                  density: State | None = None):
-        self.initialize_component(name, network)
-        self.fluid = fluid
-        self.pressure = pressure
-        self.temperature = temperature
-
-        if density is None:
-            self.density = State()
-        else:
-            self.density = density
-
+        
+        self.setup()
         self._Fluid = Fluid(self.fluid, P=self.pressure.value, T=self.temperature.value)
         self.density.value = self._Fluid.density
 
@@ -192,11 +170,3 @@ class DensityfromPT(Component):
         self._Fluid.pressure = self.pressure.value
         self._Fluid.temperature = self.temperature.value
         self.density.value = self._Fluid.density
-
-    @property
-    def iteration_variables(self) -> list[State]:
-        return []
-    
-    @property
-    def residuals(self) -> list[float]:
-        return []

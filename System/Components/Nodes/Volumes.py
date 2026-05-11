@@ -17,35 +17,18 @@ class IsothermalIncompressibleVolume(Component):
                  temperature: State,
                  density: State,
                  volume: float,
-                 mass_flow_in: State,
-                 mass_flow_out: State):
-        self.initialize_component(name, network)
-
-        self.p = pressure
-        self.T = temperature
-        self.rho = density
-        self.V = State(volume)
-        self.mdot_in = mass_flow_in
-        self.mdot_out = mass_flow_out
-    '''
-    def pre_evaluation(self) -> None:
-        # This is needed since the branches need a density to evaluate their states
-        self.evaluate_states()
-
-    def evaluate_states(self) -> None:
-        self.rho.value = Fluid(self.fluid, P=self.p.value, T=self.T.value).density
-    '''
-
-    def evaluate_states(self):
-        pass
+                 mass_flow_in: State | None = None,
+                 mass_flow_out: State | None = None):
+        
+        self.setup()
     
     @property
     def iteration_variables(self) -> list[State]:
-        return [self.p]
+        return [self.pressure]
 
     @property
     def residuals(self) -> list[float]:
-        return [self.mdot_in.value - self.mdot_out.value]
+        return [self.mass_flow_in.value - self.mass_flow_out.value]
 
 
 
@@ -57,25 +40,14 @@ class SimpleIncompressibleVolume(Component):
                  pressure: State ,
                  density: State,
                  volume: float,
-                 mass_flow_in: State,
-                 mass_flow_out: State):
-        self.initialize_component(name, network)
+                 mass_flow_in: State | None = None,
+                 mass_flow_out: State | None = None):
 
-        self.p = pressure
-        self.rho = density
-        self.V = State(volume)
-        self.mdot_in = mass_flow_in
-        self.mdot_out = mass_flow_out
-
-    def pre_evaluation(self) -> None:
-        pass
-
-    def evaluate_states(self) -> None:
-        pass
+        self.setup()
 
     @property
     def iteration_variables(self) -> list[State]:
-        return [self.p]
+        return [self.pressure]
 
     @property
     def residuals(self) -> list[float]:

@@ -27,7 +27,8 @@ class Fluid:
         "jeta": "n-Dodecane",
         "kerosene": "n-Dodecane",
         "lox": "Oxygen",
-        "water": "Water"
+        "water": "Water",
+        "air": "Air"
     }
 
     _PHASE_NAMES = {
