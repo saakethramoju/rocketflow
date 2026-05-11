@@ -13,7 +13,6 @@ class IsothermalIncompressibleVolume(Component):
     def __init__(self,
                  name:str,
                  network: Network,
-                 fluid: str,
                  pressure: State,
                  temperature: State,
                  density: State,
@@ -22,21 +21,24 @@ class IsothermalIncompressibleVolume(Component):
                  mass_flow_out: State):
         self.initialize_component(name, network)
 
-        self.fluid = fluid
         self.p = pressure
         self.T = temperature
         self.rho = density
         self.V = State(volume)
         self.mdot_in = mass_flow_in
         self.mdot_out = mass_flow_out
-
+    '''
     def pre_evaluation(self) -> None:
         # This is needed since the branches need a density to evaluate their states
         self.evaluate_states()
 
     def evaluate_states(self) -> None:
         self.rho.value = Fluid(self.fluid, P=self.p.value, T=self.T.value).density
+    '''
 
+    def evaluate_states(self):
+        pass
+    
     @property
     def iteration_variables(self) -> list[State]:
         return [self.p]

@@ -37,19 +37,13 @@ class IsothermalPressureBoundary(Component):
     def __init__(self, 
                  name: str,
                  network: Network,
-                 fluid: str,
                  pressure: State,
                  density: State,
                  temperature: State):
         self.initialize_component(name, network)
-        self.fluid = fluid
         self.pressure = pressure
-        self.rho = density
+        self.density = density
         self.temperature = temperature
-
-    def pre_evaluation(self) -> None:
-        # This is needed since the branches need a density to evaluate their states
-        self.rho.value = Fluid(self.fluid, P=self.pressure.value, T=self.temperature.value).density
 
     def evaluate_states(self) -> None:
         pass
