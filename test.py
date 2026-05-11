@@ -9,24 +9,22 @@ fluid = "RP-1"
 source_pressure = State(3e5)
 source_temperature = State(300)
 source_density = State()
-source_mdot_in = State(0)
 line1_mdot = State()
 
-manifold_pressure = State(2e5)
+manifold_pressure = State(2e5, bounds=(None,2e5))
 manifold_density = State()
 
 line2_mdot = State()
 
 ambient_pressure = State(101325)
 
-Source = SimpleIsothermalVolume("Source", SimpleNetwork,
+
+
+Source = IsothermalPressureNode("Manifold", SimpleNetwork,
                                 fluid=fluid,
                                 pressure=source_pressure,
                                 temperature=source_temperature,
-                                density=source_density,
-                                volume=0.05,
-                                mass_flow_in=source_mdot_in,
-                                mass_flow_out=line1_mdot)
+                                density=source_density)
 
 avg_density1 = 0.5*(source_density + manifold_density)
 Line1 = DischargeCoefficient("Line 1",
@@ -38,7 +36,8 @@ Line1 = DischargeCoefficient("Line 1",
                                    cross_sectional_area=0.5e-4,
                                    mass_flow=line1_mdot)
 
-Maniold = SimpleIsothermalVolume("Manifold", SimpleNetwork,
+
+Maniold = IsothermalIncompressibleVolume("Manifold", SimpleNetwork,
                                 fluid=fluid,
                                 pressure=manifold_pressure,
                                 temperature=source_temperature,
@@ -60,4 +59,4 @@ Ambient = PressureNode("Atmosphere",
                        network=SimpleNetwork,
                        pressure=ambient_pressure)
 
-print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=False))
+print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True))

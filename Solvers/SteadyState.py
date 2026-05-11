@@ -17,7 +17,7 @@ class SteadyState:
 
     def residual(self, x: np.ndarray) -> np.ndarray:
         self.network.assign_iteration_values(list(x))
-        self.network.pre_evaluation()
+        #self.network.pre_evaluation()
         self.network.evaluate_states()
         return np.array(self.network.residuals, dtype=float)
 
@@ -30,13 +30,14 @@ class SteadyState:
                         self.network.upper_bounds,
                         self.network.keep_feasible)
 
+        self.network.pre_evaluation()
         sol = least_squares(self.residual, x0, bounds=bounds)
 
         if verbose: self._verbose_print(sol)
 
         # assign final solution back into network
         self.network.assign_iteration_values(list(sol.x))
-        self.network.pre_evaluation()
+        #self.network.pre_evaluation()
         self.network.evaluate_states()
 
         solution = self.network.save(filename=filename, return_type=return_type)

@@ -1,6 +1,6 @@
 from System import *
 from Solvers import *
-from constants import PA_PER_PSI, M2_PER_IN2, N_PER_LBF
+from constants import PSIA_TO_PA, N_TO_LBF, M2_TO_IN2
 
 
 HETS = Network("HETS")
@@ -9,20 +9,21 @@ oxidizer = 'LOX'
 eta_cstar = 1
 eta_Cf = 0.95
 
-fuel_tank_pressure = State(500 * PA_PER_PSI)
-ox_tank_pressure = State(550 * PA_PER_PSI)
-fuel_inj_pressure = State(300 * PA_PER_PSI)
-ox_inj_pressure = State(300 * PA_PER_PSI)
+fuel_tank_pressure = State(500 * PSIA_TO_PA)
+ox_tank_pressure = State(550 * PSIA_TO_PA)
+fuel_inj_pressure = State(300 * PSIA_TO_PA)
+ox_inj_pressure = State(300 * PSIA_TO_PA)
 fuel_density = State(800)
 ox_density = State(1104)
 fuel_runline_mdot = State()
 ox_runline_mdot = State()
 fuel_injector_mdot = State()
 ox_injector_mdot = State()
-chamber_pressure = State(200 * PA_PER_PSI)
+chamber_pressure = State(200 * PSIA_TO_PA)
 nozzle_mdot = State()
 thrust = State()
 atmospheric_pressure = State(101325)
+
 
 FuelTank = PressureNode("Fuel Tank", 
                         network=HETS,
@@ -101,7 +102,7 @@ Nozzle = RocketCEAChokedNozzle("Nozzle",
                          oxidizer=oxidizer,
                          chamber_pressure=chamber_pressure,
                          mixture_ratio=mixture_ratio,
-                         throat_area=6.05*M2_PER_IN2,
+                         throat_area=6.05*M2_TO_IN2,
                          expansion_ratio=4,
                          ambient_pressure=atmospheric_pressure,
                          characterstic_velocity_efficiency=eta_cstar,
@@ -116,16 +117,16 @@ Ambient = PressureNode("Atmosphere",
 thrust_balance = Balance("Balance eta_cF for thrust",
                           network=HETS,
                           variable=Nozzle.eta_Cf,
-                          function=Nozzle.F - 200*N_PER_LBF,)
+                          function=Nozzle.F - 200*N_TO_LBF,)
                           #bounds=(0, 1),)
                           #keep_feasible=True)
 
 Pc_balance = Balance("Balance ox inj for Pc",
                           network=HETS,
                           variable=OxInjector.A,
-                          function=Chamber.Pc - 300*PA_PER_PSI)
+                          function=Chamber.Pc - 300*PSIA_TO_PA)
 
 print(SteadyState(HETS).solve(return_type='dataframe', filename='solution.xlsx', verbose=False))
 
-print(f"Pc: {Chamber.Pc / PA_PER_PSI}")
-print(f"F: {Nozzle.F / N_PER_LBF}")
+print(f"Pc: {Chamber.Pc / PSIA_TO_PA}")
+print(f"F: {Nozzle.F / N_TO_LBF}")

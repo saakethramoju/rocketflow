@@ -48,6 +48,7 @@ class State:
         self._lower_bound, self._upper_bound = self._normalize_bounds(bounds)
         self._keep_feasible = bool(keep_feasible)
         self._value = None
+        self._code = hex(id(self))
 
         if value is not None:
             value = float(value)
@@ -108,8 +109,47 @@ class State:
 
         if self._value is None:
             raise ValueError(
-                "State has no assigned value yet. "
-                "Initialize it with State(value=...) or assign state.value = ..."
+                f"State {self._code} has no assigned value.\n\n"
+
+                "This State was created as a placeholder using State() and has "
+                "not yet been assigned a numeric value.\n\n"
+
+                "A placeholder State() is valid if some component, solver iteration, "
+                "or external assignment sets the value before the State is accessed.\n\n"
+
+                "This error occurs only when `.value` is accessed before assignment.\n"
+                "Typical scenarios include:\n"
+                "  - A derived expression depends on an uninitialized State\n"
+                "      Example:\n"
+                "          rho_avg = 0.5 * (rho1 + rho2)\n"
+                "      If rho1.value or rho2.value is requested before assignment,\n"
+                "      evaluating rho_avg.value will fail.\n\n"
+
+                "  - A component evaluates a State before another component computes it\n"
+                "      Example:\n"
+                "          A line model requests density.value before a volume model\n"
+                "          has computed and assigned the density.\n\n"
+
+                "  - The solver evaluates the residual function before an iteration\n"
+                "      variable has received an initial value.\n\n"
+
+                "Note:\n"
+                "  Placeholder States are allowed and often useful.\n"
+                "  For example, mass flow iteration variables may safely start as\n"
+                "  State() if the solver assigns them before they are evaluated.\n\n"
+
+                "Fixes:\n"
+                "  - Move a state evaluation/computation to the corresponding\n"
+                "    component's 'pre_evaluation()'\n\n"
+
+                "  - Provide an initial value:\n"
+                "        density = State(800)\n"
+                "        mdot = State(0)\n\n"
+
+                "  - Ensure the State is assigned before any component or expression\n"
+                "    accesses `.value`\n\n"
+
+                "  - Ensure producer components evaluate before consumer components"
             )
 
         return self._value
@@ -172,29 +212,36 @@ class State:
             return False
         return True
 
-    def __str__(self) -> str:
+    def _value_string_for_display(self) -> str:
         if self.is_derived:
-            value_str = str(self.value)
-        elif self._value is None:
-            value_str = "<uninitialized>"
-        else:
-            value_str = str(self._value)
+            try:
+                return f"{self.value} <derived>"
+            except Exception:
+                return "<derived>"
+
+        if self._value is None:
+            return "<uninitialized>"
+
+        return str(self._value)
+        
+
+    def __str__(self) -> str:
+        value_str = self._value_string_for_display()
 
         if self.has_bounds:
-            return f"State(value={value_str}, bounds={self.bounds})"
-        return f"State(value={value_str})"
+            return f"State(code={self._code}, value={value_str}, bounds={self.bounds})"
+
+        return f"State(code={self._code}, value={value_str})"
+
 
     def __repr__(self) -> str:
-        if self.is_derived:
-            value_str = str(self.value)
-        elif self._value is None:
-            value_str = "<uninitialized>"
-        else:
-            value_str = str(self._value)
+        value_str = self._value_string_for_display()
 
         if self.has_bounds:
-            return f"State({value_str}, bounds={self.bounds})"
-        return f"State({value_str})"
+            return f"State(code={self._code}, value={value_str}, bounds={self.bounds})"
+
+        return f"State(code={self._code}, value={value_str})"
+    
 
     @staticmethod
     def _coerce(other) -> "State":

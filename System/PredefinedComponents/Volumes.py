@@ -8,7 +8,7 @@ from System import Component, State
 if TYPE_CHECKING:
     from System import Network
 
-class SimpleIsothermalVolume(Component):
+class IsothermalIncompressibleVolume(Component):
 
     def __init__(self,
                  name:str,
@@ -31,7 +31,8 @@ class SimpleIsothermalVolume(Component):
         self.mdot_out = mass_flow_out
 
     def pre_evaluation(self) -> None:
-        pass
+        # This is needed since the branches need a density to evaluate their states
+        self.evaluate_states()
 
     def evaluate_states(self) -> None:
         self.rho.value = Fluid(self.fluid, P=self.p.value, T=self.T.value).density
