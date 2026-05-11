@@ -20,7 +20,7 @@ ambient_pressure = State(101325)
 
 
 
-Source = IsothermalPressureNode("Manifold", SimpleNetwork,
+Source = IsothermalPressureBoundary("Manifold", SimpleNetwork,
                                 fluid=fluid,
                                 pressure=source_pressure,
                                 temperature=source_temperature,
@@ -55,7 +55,7 @@ Line2 = DischargeCoefficient("Line 2",
                                    cross_sectional_area=0.5e-4,
                                    mass_flow=line2_mdot)
 
-Ambient = PressureNode("Atmosphere", 
+Ambient = PressureBoundary("Atmosphere", 
                        network=SimpleNetwork,
                        pressure=ambient_pressure)
 

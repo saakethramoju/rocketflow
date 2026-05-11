@@ -25,11 +25,11 @@ thrust = State()
 atmospheric_pressure = State(101325)
 
 
-FuelTank = PressureNode("Fuel Tank", 
+FuelTank = PressureBoundary("Fuel Tank", 
                         network=HETS,
                         pressure=fuel_tank_pressure)
 
-OxTank = PressureNode("Fuel Tank", 
+OxTank = PressureBoundary("Fuel Tank", 
                         network=HETS,
                         pressure=ox_tank_pressure)
 
@@ -110,7 +110,7 @@ Nozzle = RocketCEAChokedNozzle("Nozzle",
                          thrust=thrust,
                          mass_flow=nozzle_mdot)
 
-Ambient = PressureNode("Atmosphere", 
+Ambient = PressureBoundary("Atmosphere", 
                        network=HETS,
                        pressure=atmospheric_pressure)
 

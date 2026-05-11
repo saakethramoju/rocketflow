@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from Utilities import Fluid
 from System import Component, State
+from Utilities import Fluid
 
 if TYPE_CHECKING:
     from System import Network

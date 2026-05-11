@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 
-class PressureNode(Component):
+class PressureBoundary(Component):
 
     def __init__(self, 
                  name: str,
@@ -32,7 +32,7 @@ class PressureNode(Component):
         return []
     
 
-class IsothermalPressureNode(Component):
+class IsothermalPressureBoundary(Component):
 
     def __init__(self, 
                  name: str,
