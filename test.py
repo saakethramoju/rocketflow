@@ -35,7 +35,7 @@ Source = IsothermalPressureBoundary("Source", SimpleNetwork,
 
 avg_density = 0.5*(manifold_density + source_fluid.density)
 
-Line1 = DarcyWeisbach("Line 1", SimpleNetwork,
+Line1 = CircularPipeDarcyWeisbach("Line 1", SimpleNetwork,
                       upstream_pressure=Source.pressure,
                       downstream_pressure=manifold_fluid.pressure,
                       length=1,
@@ -60,12 +60,12 @@ Line2 = DischargeCoefficient("Line 2", SimpleNetwork,
                              cross_sectional_area=0.5e-4,
                              mass_flow=Manifold.mass_flow_out)
 '''
-
-Line2 = DarcyWeisbach("Line 2", SimpleNetwork,
+Line2 = EllipticalDuctDarcyWeisbach("Line 2", SimpleNetwork,
                       upstream_pressure=Manifold.pressure,
                       downstream_pressure=atmospheric_pressure,
                       length=2,
-                      inner_diameter=0.4 * IN_TO_M,
+                      semi_major_axis=2 * IN_TO_M,
+                      semi_minor_axis=1 * IN_TO_M,
                       density=manifold_density,
                       dynamic_viscosity=manifold_fluid.dynamic_viscosity,
                       roughness=0.1e-3,
