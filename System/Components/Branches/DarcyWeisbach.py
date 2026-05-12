@@ -423,7 +423,7 @@ def darcy_weisbach_mass_flow(
     # needed because friction factor depends on Reynolds number,
     # which itself depends on mass flow rate
     for _ in range(max_iter):
-
+        
         Re = max(abs(mdot) * Dh / (mu * A), 1e-12)
 
         f, regime = friction_factor_from_Re(Re)
