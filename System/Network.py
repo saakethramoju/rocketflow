@@ -205,8 +205,14 @@ class Network:
                 if attr_name in {"name", "network"} or attr_name.startswith("_"):
                     continue
 
-                if hasattr(attr_value, "value"):
-                    value = attr_value.value
+                if hasattr(attr_value, "is_assigned"):
+                    if attr_value.is_assigned:
+                        try:
+                            value = attr_value.value
+                        except Exception:
+                            value = "<unavailable>"
+                    else:
+                        value = "<uninitialized>"
                 else:
                     value = attr_value
 

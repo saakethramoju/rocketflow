@@ -5,35 +5,22 @@ from Utilities import Fluid
 
 from constants import *
 
-
 # --- Network Definition ---
 SimpleNetwork = Network("Simple Network")
 
-# --- State Definition ---
-
-source_pressure = State(20 * PSIA_TO_PA)
-source_temperature = State(300)
-
-line1_mdot = State()
-
-manifold_pressure = State(16 * PSIA_TO_PA)
-manifold_density = State()
-
-line2_mdot = State()
-
-atmospheric_pressure = State(14.67 * PSIA_TO_PA)
-
 # --- Fluid Definition ---
 
-# make it so that if the user does provide a state for a fluid property, they can 
-# call that value instead of just source_fluid.density
-Fluid.add_alias("tone", "Acetone")
-fluid = 'tone'
+Fluid.add_alias("air", "Air")
+fluid = 'RP-1'
 
 source_fluid = GeneralFluidLookupfromPT("Source Fluid", SimpleNetwork, fluid,
-                             pressure=source_pressure,
-                             temperature=source_temperature)
+                             pressure=20 * PSIA_TO_PA,
+                             temperature=300)
 
+manifold_fluid = GeneralFluidLookupfromPT("Manifold Fluid", SimpleNetwork, fluid,
+                             pressure= 10 * PSIA_TO_PA,
+                             temperature=300)
+                             #density=manifold_density)
 
 
 
@@ -44,24 +31,24 @@ Source = IsothermalPressureBoundary("Source", SimpleNetwork,
                                     temperature=source_fluid.temperature,
                                     density=source_fluid.density)
 
-avg_density = 0.5*(manifold_density + source_fluid.density)
-
-
-
+avg_density = 0.5*(manifold_fluid.density + source_fluid.density)
+'''
 Line1 = DischargeCoefficient("Line 1", SimpleNetwork,
                              upstream_pressure=source_fluid.pressure,
-                             downstream_pressure=manifold_pressure,
+                             downstream_pressure=manifold_fluid.pressure,
                              density=avg_density,
                              discharge_coefficient=1,
-                             cross_sectional_area=0.5e-4,
-                             mass_flow=line1_mdot)
+                             cross_sectional_area=0.5e-4)
+'''
 
-manifold_fluid = GeneralFluidLookupfromPT("Manifold Fluid", SimpleNetwork, fluid,
-                             pressure=manifold_pressure,
-                             temperature=source_temperature,
-                             density=manifold_density)
-
-
+Line1 = DarcyWeisbach("Line 1", SimpleNetwork,
+                      upstream_pressure=Source.pressure,
+                      downstream_pressure=manifold_fluid.pressure,
+                      length=1,
+                      inner_diameter=1 * IN_TO_M,
+                      density=avg_density,
+                      dynamic_viscosity=source_fluid.dynamic_viscosity,
+                      roughness=0.09e-3)
 
 
 Manifold = IsothermalIncompressibleVolume("Manifold", SimpleNetwork,
@@ -69,19 +56,19 @@ Manifold = IsothermalIncompressibleVolume("Manifold", SimpleNetwork,
                                           temperature=manifold_fluid.temperature,
                                           density=manifold_fluid.density,
                                           volume=0.01,
-                                          mass_flow_in=line1_mdot,
-                                          mass_flow_out=line2_mdot)
+                                          mass_flow_in=Line1.mass_flow)
 
 Line2 = DischargeCoefficient("Line 2", SimpleNetwork,
                              upstream_pressure=manifold_fluid.pressure,
-                             downstream_pressure=atmospheric_pressure,
+                             downstream_pressure=14.67 * PSIA_TO_PA,
                              density=manifold_fluid.density,
                              discharge_coefficient=1,
                              cross_sectional_area=0.5e-4,
-                             mass_flow=line2_mdot)
+                             mass_flow=Manifold.mass_flow_out)
 
 Ambient = PressureBoundary("Atmoshere", SimpleNetwork,
-                           pressure=atmospheric_pressure)
+                           pressure=14.67 * PSIA_TO_PA)
 
 
-print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=False))
+
+print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))

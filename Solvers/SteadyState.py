@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from scipy.optimize import least_squares, Bounds
+from scipy.optimize import least_squares, Bounds, root
 
 if TYPE_CHECKING:
     from System import Network
@@ -86,7 +86,10 @@ class SteadyState:
             self.network.keep_feasible,
         )
 
-        sol = least_squares(self.residual, x0, bounds=bounds)
+        if self.network.has_bounds:
+            sol = least_squares(self.residual, x0, bounds=bounds)
+        else:
+            sol = root(self.residual, x0)
 
         if verbose:
             self._verbose_print(sol)
