@@ -26,7 +26,7 @@ class RocketCEAChokedNozzle(Component):
                  thrust: State | None = None,
                  mass_flow: State | None = None):
         self.setup()
-        self._cea_obj = create_SI_CEA_object(self.fuel, self.ox)
+        self._cea_obj = create_SI_CEA_object(self.fuel, self.oxidizer)
 
 
     def evaluate_states(self) -> None:

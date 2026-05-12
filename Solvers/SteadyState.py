@@ -43,6 +43,7 @@ class SteadyState:
 
         return self.network.save(filename=filename, return_type=return_type)
 
+
     def solve(
         self,
         filename: str | None = None,
@@ -51,10 +52,33 @@ class SteadyState:
         static: bool = False,
     ):
         """
-        Solve the steady-state network.
+        Solve the network steady-state nonlinear system.
 
-        If static=True, or if the network has no iteration variables and
-        no residuals, this falls back to static_evaluate().
+        Behavior
+        --------
+        - If `static=True`, or the network has no iteration variables
+        and no residual equations, the network is only evaluated once
+        without nonlinear iteration.
+
+        - `root()` is used for square, unconstrained systems:
+            number of residuals == number of iteration variables
+
+        - `least_squares()` is automatically used when:
+            - any variable bounds exist
+            - the system is overdetermined
+                (more residuals than iteration variables)
+
+        - If `root()` fails to converge, the solver automatically
+        falls back to `least_squares()`.
+
+        Requirements
+        ------------
+        The system must have at least as many residual equations as
+        iteration variables.
+
+        After convergence, the final solution values are reassigned
+        to the network and all component states are re-evaluated
+        before export.
         """
         x0 = np.array(self.network.iteration_values, dtype=float)
 
@@ -73,10 +97,10 @@ class SteadyState:
                 verbose=verbose,
             )
 
-        if len(x0) != len(r0):
+        if len(r0) < len(x0):
             raise ValueError(
-                f"SteadyState solve requires equal numbers of iteration "
-                f"variables and residuals. Got {len(x0)} iteration variables "
+                f"SteadyState solve requires at least as many residuals as "
+                f"iteration variables. Got {len(x0)} iteration variables "
                 f"and {len(r0)} residuals."
             )
 
@@ -86,13 +110,29 @@ class SteadyState:
             self.network.keep_feasible,
         )
 
-        if self.network.has_bounds:
+        switched_to_least_squares = False
+
+        if self.network.has_bounds or len(r0) > len(x0):
+            solver_name = "scipy.optimize.least_squares"
             sol = least_squares(self.residual, x0, bounds=bounds)
+
         else:
+            solver_name = "scipy.optimize.root"
             sol = root(self.residual, x0)
 
+            if not sol.success:
+                switched_to_least_squares = True
+                solver_name = "scipy.optimize.least_squares (fallback)"
+                sol = least_squares(self.residual, x0, bounds=bounds)
+
+        if verbose and switched_to_least_squares:
+            print(
+                "\n[Warning] root() failed, so the solver switched to "
+                "least_squares().\n"
+            )
+
         if verbose:
-            self._verbose_print(sol)
+            self._verbose_print(sol, solver_name)
 
         # assign final solution back into network
         self.network.assign_iteration_values(list(sol.x))
@@ -103,10 +143,13 @@ class SteadyState:
 
         return solution
 
-    def _verbose_print(self, sol) -> None:
+    def _verbose_print(self, sol, solver_name: str) -> None:
         print("\n" + "=" * 50)
         print("        STEADY-STATE SOLVER SUMMARY")
         print("=" * 50)
+
+        print("\n[Solver]")
+        print(f"  Method         : {solver_name}")
 
         print("\n[Convergence]")
         print(f"  Success        : {sol.success}")
