@@ -9,6 +9,66 @@ if TYPE_CHECKING:
 
 
 class Balance:
+    """
+    Adds an additional solve equation to the network by defining:
+
+        "adjust this variable until this function equals zero"
+
+    A Balance contributes:
+        - one iteration variable
+        - one residual equation
+
+    to the global steady-state solve.
+
+    Parameters
+    ----------
+    variable
+        Non-derived State that the solver is allowed to modify.
+
+    function
+        Residual expression to drive to zero. May be:
+            - a callable returning a float
+            - a derived State expression
+
+    bounds
+        Optional fallback bounds for the solve variable.
+        Only applied if the State itself does not already
+        define bounds.
+
+    keep_feasible
+        Passed through to bounded solvers such as
+        scipy.optimize.least_squares.
+
+    Examples
+    --------
+    Balance chamber pressure by adjusting injector area:
+
+        Balance(
+            "Balance injector for Pc",
+            network=net,
+            variable=Injector.A,
+            function=Chamber.Pc - 300 * PSIA_TO_PA,
+        )
+
+    Balance thrust by adjusting nozzle efficiency:
+
+        Balance(
+            "Balance thrust",
+            network=net,
+            variable=Nozzle.eta_Cf,
+            function=Nozzle.F - 200 * N_TO_LBF,
+            bounds=(0, 1),
+        )
+
+    Notes
+    -----
+    The residual equation is automatically included in the
+    network solve. During each iteration, the solver modifies
+    `variable` until `function -> 0`.
+
+    Derived States cannot be used as solve variables because
+    they do not store assignable values.
+    """
     def __init__(
         self,
         name: str,

@@ -149,6 +149,12 @@ class GeneralFluidLookupfromPT(Component):
             getattr(type(self._Fluid), name, None),
             property,
         )
+        
+    @property
+    def ignored_export_attributes(self) -> set[str]:
+        return super().ignored_export_attributes | {
+            "property_states",
+        }
 
 
 

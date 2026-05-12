@@ -201,8 +201,10 @@ class Network:
         # ---------- build base data ----------
         records = []
         for comp in self.component_list:
+            ignored_attributes = {"name", "network"} | comp.ignored_export_attributes
+
             for attr_name, attr_value in comp.__dict__.items():
-                if attr_name in {"name", "network"} or attr_name.startswith("_"):
+                if attr_name in ignored_attributes or attr_name.startswith("_"):
                     continue
 
                 if hasattr(attr_value, "is_assigned"):

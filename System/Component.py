@@ -161,3 +161,7 @@ class Component(ABC):
             lines.append(f"    {attr}: {formatted_value}")
 
         return "\n".join(lines)
+        
+    @property
+    def ignored_export_attributes(self) -> set[str]:
+        return set()
