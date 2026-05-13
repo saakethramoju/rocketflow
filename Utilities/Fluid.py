@@ -28,7 +28,11 @@ class Fluid:
         "kerosene": "n-Dodecane",
         "lox": "Oxygen",
         "water": "Water",
-        "air": "Air"
+        "air": "Air",
+        "nitrous": "NitrousOxide",
+        "n2o": "NitrousOxide",
+        "gn2": "Nitrogen",
+        "n2": "Nitrogen"
     }
 
     _PHASE_NAMES = {
@@ -272,15 +276,35 @@ class Fluid:
 
     @property
     def HP(self) -> Tuple[float, float]:
-        """Return (P [Pa], h [J/kg])."""
-        return self._P, self._h
+        """Return (h [J/kg], P [Pa])."""
+        return self._h, self._P
 
     @HP.setter
     def HP(self, values: Tuple[float, float]):
-        """Update pressure and enthalpy simultaneously."""
+        """Update enthalpy and pressure simultaneously."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("HP must be set with (P, h)")
-        self._P, self._h = float(values[0]), float(values[1])
+        self._h, self._P = float(values[0]), float(values[1])
+        self.set_pyfluid()
+
+    @property
+    def TP(self) -> Tuple[float, float]:
+        """Return (T [K], P [Pa])."""
+        return self.temperature, self._P
+
+
+    @TP.setter
+    def TP(self, values: Tuple[float, float]):
+        """Update temperature and pressure simultaneously."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("TP must be set with (T, P)")
+
+        T = float(values[0])
+        P = float(values[1])
+
+        self._P = P
+        self._h = self._enthalpy_from_PT(P, T)
+
         self.set_pyfluid()
 
     # ---------------- Thermo properties ---------------- #

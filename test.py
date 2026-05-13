@@ -13,7 +13,7 @@ manifold_density = State()
 
 # --- Fluid Definition ---
 Fluid.add_alias("Octane", "n-Octane")
-fluid = 'Octane'
+fluid = 'IsoPropanol'
 
 source_fluid = GeneralFluidLookupfromPT("Source Fluid", SimpleNetwork, fluid,
                              pressure=20 * PSIA_TO_PA,

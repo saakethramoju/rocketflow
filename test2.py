@@ -13,7 +13,7 @@ manifold_density = State()
 
 # --- Fluid Definition ---
 Fluid.add_alias("Octane", "n-Octane")
-fluid = 'Water'
+fluid = 'Octane'
 
 source_fluid = GeneralFluidLookupfromPT("Source Fluid", SimpleNetwork, fluid,
                              pressure=20 * PSIA_TO_PA,
@@ -43,13 +43,23 @@ Line1 = CircularPipeDarcyWeisbach("Line 1", SimpleNetwork,
                       dynamic_viscosity=source_fluid.dynamic_viscosity,
                       roughness=0.1e-3)
 
-
+'''
 Manifold = IsothermalIncompressibleVolume("Manifold", SimpleNetwork,
                                           pressure=manifold_fluid.pressure,
                                           temperature=manifold_fluid.temperature,
                                           density=manifold_fluid.density,
                                           volume=0.01,
                                           mass_flow_in=Line1.mass_flow)
+'''
+
+Manifold = SimpleVolume("Manifold", SimpleNetwork, 
+                        pressure=manifold_fluid.pressure,
+                        temperature=manifold_fluid.temperature,
+                        density=manifold_fluid.density,
+                        volume=0.01,
+                        mass_flow_in=Line1.mass_flow,
+                        enthalpy_in=source_fluid.enthalpy,
+                        enthalpy_out=manifold_fluid.enthalpy)
 '''
 Line2 = DischargeCoefficient("Line 2", SimpleNetwork,
                              upstream_pressure=manifold_fluid.pressure,
@@ -74,3 +84,5 @@ Ambient = PressureBoundary("Atmoshere", SimpleNetwork,
                            pressure=atmospheric_pressure)
 
 print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))
+
+#Fluid.show_available_fluids()
