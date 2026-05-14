@@ -23,8 +23,6 @@ manifold_fluid = GeneralFluidLookupfromPT("Manifold Fluid", SimpleNetwork, fluid
                              pressure= 10 * PSIA_TO_PA,
                              temperature=300,
                              density=manifold_density)
-
-
 # --- Component Definition ---
 
 Source = IsothermalPressureBoundary("Source", SimpleNetwork,

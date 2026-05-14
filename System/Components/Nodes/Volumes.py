@@ -30,7 +30,6 @@ class SimpleIncompressibleVolume(Component):
     @property
     def residuals(self) -> list[float]:
         return [self.mdot_in.value - self.mdot_out.value]
-    
 
 
 class IsothermalIncompressibleVolume(Component):
@@ -54,7 +53,6 @@ class IsothermalIncompressibleVolume(Component):
     @property
     def residuals(self) -> list[float]:
         return [self.mass_flow_in.value - self.mass_flow_out.value]
-    
 
 
 class SimpleVolume(Component):
@@ -81,4 +79,25 @@ class SimpleVolume(Component):
     def residuals(self) -> list[float]:
         return [self.mass_flow_in.value - self.mass_flow_out.value,
                 (self.mass_flow_in.value * self.enthalpy_in.value) - (self.mass_flow_out.value * self.enthalpy_out.value)]
+    '''
+    @property
+    def residual_scalar(self) -> list[float]:
 
+        mdot_scale = max(
+            abs(self.mass_flow_in.value),
+            abs(self.mass_flow_out.value),
+            1e-9,
+        )
+
+        energy_scale = max(
+            abs(self.mass_flow_in.value * self.enthalpy_in.value),
+            abs(self.mass_flow_out.value * self.enthalpy_out.value),
+            1e-9,
+        )
+
+        return [
+            mdot_scale,
+            energy_scale,
+        ]
+    '''
+    

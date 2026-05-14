@@ -113,12 +113,8 @@ class Component(ABC):
         return []
     
     @property
-    def timestep_variables(self) -> list[State]:
-        return []
-    
-    @property
-    def time_derivative(self) -> list[State]:
-        return []
+    def residual_scalar(self) -> list[float]:
+        return [1.0] * len(self.residuals)
 
     def __repr__(self):
         return f"Component ({self.__class__.__name__}: {self.name})"
@@ -165,3 +161,12 @@ class Component(ABC):
     @property
     def ignored_export_attributes(self) -> set[str]:
         return set()
+    
+    # ---- transient stuff ----#
+    @property
+    def timestep_variables(self) -> list[State]:
+        return []
+    
+    @property
+    def time_derivative(self) -> list[State]:
+        return []
