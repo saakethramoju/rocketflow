@@ -176,3 +176,25 @@ class DensityfromPT(Component):
         self._Fluid.pressure = self.pressure.value
         self._Fluid.temperature = self.temperature.value
         self.density.value = self._Fluid.density
+
+
+
+
+class EnthalpyfromPT(Component):
+
+    def __init__(self, 
+                 name: str,
+                 network: Network,
+                 fluid: str,
+                 pressure: State,
+                 temperature: State,
+                 enthalpy: State | None = None):
+        
+        self.setup()
+        self._Fluid = Fluid(self.fluid, P=self.pressure.value, T=self.temperature.value)
+        self.enthalpy.value = self._Fluid.density
+
+    def evaluate_states(self) -> None:
+        self._Fluid.pressure = self.pressure.value
+        self._Fluid.temperature = self.temperature.value
+        self.enthalpy.value = self._Fluid.density

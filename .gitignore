@@ -52,3 +52,9 @@ System/Components/Fluids/__pycache__/Lookups.cpython-313.pyc
 System/Components/Fluids/__pycache__/PTLookups.cpython-313.pyc
 System/Components/Fluids/__pycache__/PTLookups.cpython-313.pyc
 System/Components/Fluids/__pycache__/PTLookups.cpython-313.pyc
+System/Components/Fluids/__pycache__/IdealGas.cpython-313.pyc
+System/Components/Fluids/__pycache__/IdealGasLookups.cpython-313.pyc
+System/Components/Fluids/__pycache__/RealFluidLookups.cpython-313.pyc
+Utilities/__pycache__/IdealGas.cpython-313.pyc
+System/Components/Branches/__pycache__/CompressibleOrifice.cpython-313.pyc
+System/Components/Branches/__pycache__/Regulators.cpython-313.pyc

@@ -1,1 +1,2 @@
-from .PTLookups import *
+from .RealFluidLookups import *
+from .IdealGasLookups import *

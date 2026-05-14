@@ -24,7 +24,6 @@ class IsothermalPressureBoundary(Component):
                  name: str,
                  network: Network,
                  pressure: State,
-                 density: State,
                  temperature: State):
         
         self.setup()

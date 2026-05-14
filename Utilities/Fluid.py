@@ -460,13 +460,48 @@ class Fluid:
             return float(self._backend.speed_sound())
         except Exception:
             return None
+
+
     @property
-    def specific_heat(self) -> float:
-        """Mass-specific heat capacity at constant pressure, Cp, in J/kg-K."""
+    def specific_heat_cp(self) -> float:
+        """Cp in J/kg-K."""
         try:
             return float(self._backend.cpmass())
         except Exception:
             return None
+
+    @property
+    def specific_heat_cv(self) -> float:
+        """Cv in J/kg-K."""
+        try:
+            return float(self._backend.cvmass())
+        except Exception:
+            return None
+
+    @property
+    def specific_heat(self) -> float:
+        """Backward-compatible alias for Cp."""
+        return self.specific_heat_cp
+
+
+    @property
+    def specific_heat_ratio(self) -> float:
+        """
+        Specific heat ratio gamma = Cp/Cv.
+        """
+
+        try:
+            cp = self.specific_heat_cp
+            cv = self.specific_heat_cv
+
+            if cp is None or cv is None or cv == 0.0:
+                return None
+
+            return cp / cv
+
+        except Exception:
+            return None
+        
 
     @property
     def specific_volume(self) -> float:

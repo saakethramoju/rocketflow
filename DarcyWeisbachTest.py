@@ -27,8 +27,7 @@ manifold_fluid = GeneralFluidLookupfromPT("Manifold Fluid", SimpleNetwork, fluid
 
 Source = IsothermalPressureBoundary("Source", SimpleNetwork,
                                     pressure=source_fluid.pressure,
-                                    temperature=source_fluid.temperature,
-                                    density=source_fluid.density)
+                                    temperature=source_fluid.temperature)
 
 avg_density = 0.5*(manifold_density + source_fluid.density)
 
@@ -88,6 +87,6 @@ source_pressure_balance = Balance("Balance source pressure until mdot = 0.6",
                           #bounds=(0, 3e5),
                           #keep_feasible=True)
 
-print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))
+print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=True))
 
 #Fluid.show_available_fluids()

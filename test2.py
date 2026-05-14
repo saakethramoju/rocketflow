@@ -27,8 +27,7 @@ manifold_fluid = GeneralFluidLookupfromPT("Manifold Fluid", SimpleNetwork, fluid
 
 Source = IsothermalPressureBoundary("Source", SimpleNetwork,
                                     pressure=source_fluid.pressure,
-                                    temperature=source_fluid.temperature,
-                                    density=source_fluid.density)
+                                    temperature=source_fluid.temperature)
 
 avg_density = 0.5*(manifold_density + source_fluid.density)
 
@@ -81,6 +80,26 @@ Line2 = EllipticalDuctDarcyWeisbach("Line 2", SimpleNetwork,
 Ambient = PressureBoundary("Atmoshere", SimpleNetwork,
                            pressure=atmospheric_pressure)
 
-print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))
+#print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))
 
 #Fluid.show_available_fluids()
+
+from Utilities import IdealGas
+
+gas = IdealGas("Nitrogen", T=300)
+print(gas)
+
+print("-------------------")
+
+gas.pressure = 101325
+print(gas)
+
+print("-------------------")
+
+air = IdealGas({"Nitrogen": 0.78, "Oxygen": 0.21, "Argon": 0.01}, basis="mole", T=298.15)
+print(air)
+
+print("-------------------")
+
+same_air = IdealGas({"Nitrogen": 0.78, "Oxygen": 0.21, "Argon": 0.01}, basis="mole", h=air.enthalpy)
+print(same_air)
