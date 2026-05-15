@@ -3,13 +3,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from System import Component, State
-from Utilities import Fluid, IdealGas
+from Utilities import Fluid, IdealGas, FluidRegistry
 
 if TYPE_CHECKING:
     from System import Network
 
 
 class IdealGasLookup(Component):
+
+    _REFERENCE_TEMPERATURE = 298.15
+    _REFERENCE_PRESSURE = 101325.0
 
     _THERMO_NAMES = (
         "pressure",
@@ -53,10 +56,6 @@ class IdealGasLookup(Component):
         enthalpy: State | float | None = None,
         internal_energy: State | float | None = None,
         density: State | float | None = None,
-        reference_temperature: float = 298.15,
-        reference_pressure: float = 101325.0,
-        reference_enthalpy: float = 0.0,
-        reference_internal_energy: float = 0.0,
         **property_states: State,
     ):
 
@@ -76,17 +75,31 @@ class IdealGasLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-        self.reference_temperature = float(self.reference_temperature.value)
-        self.reference_pressure = float(self.reference_pressure.value)
-        self.reference_enthalpy = float(self.reference_enthalpy.value)
-        self.reference_internal_energy = float(
-            self.reference_internal_energy.value
+        # Keep self.fluid exactly as the user provided it.
+        # Use these only for backend calculations.
+        if not FluidRegistry.supports_both(self.fluid):
+            raise ValueError(
+                f"{self.fluid!r} must be supported by both CoolProp and "
+                f"PYroMat because IdealGasLookup uses CoolProp reference "
+                f"enthalpy/internal energy and PYroMat ideal-gas properties."
+            )
+
+        self._coolprop_fluid = FluidRegistry.coolprop_name(self.fluid)
+        self._pyromat_fluid = FluidRegistry.pyromat_name(self.fluid)
+
+        reference_fluid = Fluid(
+            self._coolprop_fluid,
+            pressure=self._REFERENCE_PRESSURE,
+            temperature=self._REFERENCE_TEMPERATURE,
         )
 
+        self._reference_enthalpy = reference_fluid.enthalpy
+        self._reference_internal_energy = reference_fluid.internal_energy
+
         self._reference_IdealGas = IdealGas(
-            self.fluid,
-            pressure=self.reference_pressure,
-            temperature=self.reference_temperature,
+            self._pyromat_fluid,
+            pressure=self._REFERENCE_PRESSURE,
+            temperature=self._REFERENCE_TEMPERATURE,
         )
 
         provided_names = [
@@ -100,23 +113,41 @@ class IdealGasLookup(Component):
                 "IdealGasLookup requires at least one thermodynamic input."
             )
 
-        first_name = provided_names[0]
-
-        if first_name in {"pressure", "density"}:
+        if "pressure" in provided_names:
             if len(provided_names) < 2:
                 raise ValueError(
-                    f"{first_name} cannot define an ideal-gas state by itself."
+                    "pressure cannot define an ideal-gas state by itself."
                 )
 
             self._flash_names = provided_names[:2]
 
+            if "pressure" not in self._flash_names:
+                raise ValueError(
+                    "If pressure is provided, it must be one of the first "
+                    "two thermodynamic inputs."
+                )
+
+        elif "density" in provided_names:
+            if len(provided_names) < 2:
+                raise ValueError(
+                    "density cannot define an ideal-gas state by itself."
+                )
+
+            self._flash_names = provided_names[:2]
+
+            if "density" not in self._flash_names:
+                raise ValueError(
+                    "If density is provided, it must be one of the first "
+                    "two thermodynamic inputs."
+                )
+
         else:
-            self._flash_names = [first_name]
+            self._flash_names = [provided_names[0]]
 
         self._validate_flash_names()
 
         self._IdealGas = IdealGas(
-            self.fluid,
+            self._pyromat_fluid,
             **self._ideal_gas_constructor_kwargs(),
         )
 
@@ -247,14 +278,14 @@ class IdealGasLookup(Component):
             return (
                 self._reference_IdealGas.enthalpy
                 + float(value)
-                - self.reference_enthalpy
+                - self._reference_enthalpy
             )
 
         if name == "internal_energy":
             return (
                 self._reference_IdealGas.internal_energy
                 + float(value)
-                - self.reference_internal_energy
+                - self._reference_internal_energy
             )
 
         return float(value)
@@ -262,14 +293,14 @@ class IdealGasLookup(Component):
     def _from_ideal_basis(self, name: str, value: float) -> float:
         if name == "enthalpy":
             return (
-                self.reference_enthalpy
+                self._reference_enthalpy
                 + float(value)
                 - self._reference_IdealGas.enthalpy
             )
 
         if name == "internal_energy":
             return (
-                self.reference_internal_energy
+                self._reference_internal_energy
                 + float(value)
                 - self._reference_IdealGas.internal_energy
             )
@@ -308,46 +339,14 @@ class IdealGasLookup(Component):
             "_IdealGas",
             "reference_IdealGas",
             "_reference_IdealGas",
+            "coolprop_fluid",
+            "_coolprop_fluid",
+            "pyromat_fluid",
+            "_pyromat_fluid",
+            "reference_enthalpy",
+            "_reference_enthalpy",
+            "reference_internal_energy",
+            "_reference_internal_energy",
             "input_map",
             "_input_map",
         }
-    
-    
-
-class Helium(IdealGasLookup):
-
-    def __init__(
-        self,
-        name: str,
-        network: Network,
-        pressure: State | float | None = None,
-        temperature: State | float | None = None,
-        enthalpy: State | float | None = None,
-        internal_energy: State | float | None = None,
-        density: State | float | None = None,
-        reference_temperature: float = 298.15,
-        reference_pressure: float = 101325.0,
-        **property_states: State,
-    ):
-
-        reference_fluid = Fluid(
-            "Helium",
-            pressure=reference_pressure,
-            temperature=reference_temperature,
-        )
-
-        super().__init__(
-            name=name,
-            network=network,
-            fluid="Helium",
-            pressure=pressure,
-            temperature=temperature,
-            enthalpy=enthalpy,
-            internal_energy=internal_energy,
-            density=density,
-            reference_temperature=reference_temperature,
-            reference_pressure=reference_pressure,
-            reference_enthalpy=reference_fluid.enthalpy,
-            reference_internal_energy=reference_fluid.internal_energy,
-            **property_states,
-        )

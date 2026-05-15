@@ -3,11 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from System import Component, State
-from Utilities import Fluid
+from Utilities import Fluid, FluidRegistry
 
 if TYPE_CHECKING:
     from System import Network
-
 
 
 class FluidLookup(Component):
@@ -65,6 +64,10 @@ class FluidLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
+        # Keep self.fluid exactly as the user provided it.
+        # Use this only for backend Fluid calculations.
+        self._coolprop_fluid = FluidRegistry.coolprop_name(self.fluid)
+
         provided_names = [
             prop_name
             for prop_name in self._THERMO_NAMES
@@ -99,7 +102,7 @@ class FluidLookup(Component):
                 delattr(self, prop_name)
 
         self._Fluid = Fluid(
-            self.fluid,
+            self._coolprop_fluid,
             **{
                 flash_name: getattr(self, flash_name).value
                 for flash_name in self._flash_names
@@ -193,9 +196,10 @@ class FluidLookup(Component):
             "_Fluid",
             "input_map",
             "_input_map",
+            "coolprop_fluid",
+            "_coolprop_fluid",
         }
     
-
     
 
 class DensityfromPT(Component):

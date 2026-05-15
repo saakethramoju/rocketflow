@@ -1,6 +1,5 @@
 from System import *
 from Solvers import *
-from Utilities import Fluid
 '''
 # Pure fluid: pressure-temperature
 water = Fluid("Water", pressure=101325, temperature=300)
@@ -310,12 +309,17 @@ print("Air P from P+T                        :", air_pressure_temperature.pressu
 print("Air P from density+u                  :", air_density_internal_energy.pressure)
 
 '''
+from Utilities import FluidRegistry
+
+FluidRegistry.add_alias("pressurant", "Helium")
 
 SimpleNetwork = Network("Simple Network")
 
-supply_gas = Helium("Supply Gas", SimpleNetwork, enthalpy=1553814.3007257418)
+supply_gas = IdealGasLookup("Supply Gas", SimpleNetwork, "Pressurant", enthalpy=1553814.3007257418)
 
-f = FluidLookup("Fluid Lookup", SimpleNetwork, "Helium", pressure=101325, enthalpy=1553814.3007257418)
+f = FluidLookup("Fluid Lookup", SimpleNetwork, "pressurant", pressure=101325, enthalpy=1553814.3007257418)
 
 print(supply_gas.temperature)
 print(f.temperature)
+
+print(FluidRegistry.aliases)

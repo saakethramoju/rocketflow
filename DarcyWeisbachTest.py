@@ -12,8 +12,8 @@ atmospheric_pressure = State(14.67 * PSIA_TO_PA)
 manifold_density = State()
 
 # --- Fluid Definition ---
-Fluid.add_alias("Octane", "n-Octane")
-fluid = 'Octane'
+#Fluid.add_alias("Octane", "n-Octane")
+fluid = 'RP-1'
 
 source_fluid = FluidLookup("Source Fluid", SimpleNetwork, fluid,
                              pressure=20 * PSIA_TO_PA,
