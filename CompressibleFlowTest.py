@@ -35,6 +35,6 @@ RegCd_Balance = Balance("Balance reg Cd to give a certain set pressure", Compres
                         function=PressReg.set_pressure - 1000*PSIA_TO_PA)
 '''
 
-Tank = 
+#Tank = 
 
 print(SteadyState(CompressibleFlow).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))

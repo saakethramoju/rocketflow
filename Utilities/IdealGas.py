@@ -11,23 +11,18 @@ class IdealGas:
     """
     PYroMat ideal-gas wrapper with a Fluid-like API.
 
-    Units:
-        P   Pa
-        T   K
-        h   J/kg
-        rho kg/m^3
-        cp  J/kg-K
-        cv  J/kg-K
-        s   J/kg-K
-        R   J/kg-K
+    Supports thermal state from:
+        temperature
+        enthalpy
+        internal_energy
 
-    Supports:
-        IdealGas("Nitrogen", T=...)
-        IdealGas("Nitrogen", h=...)
-        IdealGas("Nitrogen", P=..., T=...)
-        IdealGas("Nitrogen", P=..., h=...)
-        IdealGas({"Nitrogen": 0.78, "Oxygen": 0.21}, basis="mole", T=...)
-        IdealGas({"Nitrogen": 0.75, "Oxygen": 0.25}, basis="mass", h=...)
+    Pressure is optional.
+
+    Density can be used only with another closure:
+        density + pressure         -> temperature
+        density + temperature      -> pressure
+        density + enthalpy         -> temperature, pressure
+        density + internal_energy  -> temperature, pressure
     """
 
     _ALIASES = {
@@ -63,15 +58,17 @@ class IdealGas:
         self,
         fluid: Union[str, Dict[str, float]],
         basis: str = "mass",
-        P: float | None = None,
-        h: float | None = None,
-        T: float | None = None,
-        Q: float | None = None,
+        pressure: float | None = None,
+        enthalpy: float | None = None,
+        temperature: float | None = None,
+        internal_energy: float | None = None,
+        density: float | None = None,
+        quality: float | None = None,
     ):
         self._configure_units()
 
-        if Q is not None:
-            raise ValueError("IdealGas does not support vapor quality Q.")
+        if quality is not None:
+            raise ValueError("IdealGas does not support vapor quality.")
 
         self._species_ids: List[str] = []
         self._display_names: List[str] = []
@@ -89,6 +86,7 @@ class IdealGas:
                 raise ValueError("basis must be 'mass' or 'mole'")
 
             tmp: Dict[str, Tuple[float, List[str]]] = {}
+
             for user_name, frac in fluid.items():
                 sid, display = self._normalize_name(user_name)
                 total, names = tmp.get(sid, (0.0, []))
@@ -96,17 +94,26 @@ class IdealGas:
 
             self._species_ids = list(tmp.keys())
             fractions = np.array([v[0] for v in tmp.values()], dtype=float)
-            self._display_names = [", ".join(sorted(set(v[1]))) for v in tmp.values()]
+            self._display_names = [
+                ", ".join(sorted(set(v[1])))
+                for v in tmp.values()
+            ]
 
             if not np.isclose(fractions.sum(), 1.0, atol=1e-6):
                 raise ValueError(f"{basis.capitalize()} fractions must sum to 1.0")
 
             if basis == "mole":
                 self._mole_fractions = fractions
-                self._mass_fractions = self.mole_to_mass(self._species_ids, fractions)
+                self._mass_fractions = self.mole_to_mass(
+                    self._species_ids,
+                    fractions,
+                )
             else:
                 self._mass_fractions = fractions
-                self._mole_fractions = self.mass_to_mole(self._species_ids, fractions)
+                self._mole_fractions = self.mass_to_mole(
+                    self._species_ids,
+                    fractions,
+                )
 
             self._mixture = len(self._species_ids) > 1
 
@@ -115,22 +122,17 @@ class IdealGas:
 
         self._species = [pm.get(sid) for sid in self._species_ids]
 
-        self._P: float | None = None
-        self._h: float | None = None
-        self._T: float | None = None
+        self._pressure: float | None = None
+        self._enthalpy: float | None = None
+        self._temperature: float | None = None
 
-        if T is not None:
-            self._P = None if P is None else float(P)
-            self._T = float(T)
-            self._h = self._enthalpy_from_T(self._T)
-
-        elif h is not None:
-            self._P = None if P is None else float(P)
-            self._h = float(h)
-            self._T = self._temperature_from_h(self._h)
-
-        else:
-            raise LookupError("Please provide either T or h.")
+        self._set_state(
+            pressure=pressure,
+            temperature=temperature,
+            enthalpy=enthalpy,
+            internal_energy=internal_energy,
+            density=density,
+        )
 
     # ---------------- Units ---------------- #
 
@@ -143,54 +145,168 @@ class IdealGas:
         pm.config["unit_volume"] = "m3"
         pm.config["unit_molar"] = "mol"
 
+    # ---------------- State setting / flashing ---------------- #
+
+    def _set_state(
+        self,
+        pressure: float | None = None,
+        temperature: float | None = None,
+        enthalpy: float | None = None,
+        internal_energy: float | None = None,
+        density: float | None = None,
+    ) -> None:
+
+        thermal_inputs = [
+            temperature is not None,
+            enthalpy is not None,
+            internal_energy is not None,
+        ]
+
+        n_thermal = sum(thermal_inputs)
+
+        if n_thermal > 1:
+            raise ValueError("Provide only one of temperature, enthalpy, or internal_energy.")
+
+        if n_thermal == 0:
+            if pressure is not None and density is not None:
+                self._pressure = float(pressure)
+                self._temperature = self._pressure / (float(density) * self.gas_constant)
+                self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+                return
+
+            raise LookupError(
+                "Please provide temperature, enthalpy, or internal_energy. "
+                "Alternatively provide both pressure and density."
+            )
+
+        if temperature is not None:
+            self._temperature = float(temperature)
+            self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+        elif enthalpy is not None:
+            self._enthalpy = float(enthalpy)
+            self._temperature = self._temperature_from_enthalpy(self._enthalpy)
+
+        elif internal_energy is not None:
+            self._temperature = self._temperature_from_internal_energy(float(internal_energy))
+            self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+        if pressure is not None:
+            self._pressure = float(pressure)
+
+        if density is not None:
+            pressure_from_density = float(density) * self.gas_constant * self._temperature
+
+            if self._pressure is None:
+                self._pressure = pressure_from_density
+            else:
+                if not np.isclose(self._pressure, pressure_from_density, rtol=1e-5, atol=1e-6):
+                    raise ValueError(
+                        "Provided pressure and density are inconsistent with the "
+                        "ideal-gas equation of state at the solved temperature. "
+                        f"pressure={self._pressure:.6g}, "
+                        f"density*R*temperature={pressure_from_density:.6g}"
+                    )
+
     # ---------------- Internal helpers ---------------- #
 
     def _require_pressure(self, property_name: str = "This property"):
-        if self._P is None:
+        if self._pressure is None:
             raise ValueError(f"{property_name} requires pressure. Set gas.pressure first.")
 
-    def _mix_mass_weighted(self, method: str, *, T: float | None = None, p: float | None = None):
+    def _mix_mass_weighted(
+        self,
+        method: str,
+        *,
+        temperature: float | None = None,
+        pressure: float | None = None,
+    ):
         vals = []
+
         for sp in self._species:
             fn = getattr(sp, method)
             kwargs = {}
-            if T is not None:
-                kwargs["T"] = T
-            if p is not None:
-                kwargs["p"] = p
+
+            if temperature is not None:
+                kwargs["T"] = temperature
+
+            if pressure is not None:
+                kwargs["p"] = pressure
+
             vals.append(float(np.asarray(fn(**kwargs)).squeeze()))
+
         return float(np.dot(self._mass_fractions, vals))
 
-    def _enthalpy_from_T(self, T: float) -> float:
-        return self._mix_mass_weighted("h", T=T)
+    def _enthalpy_from_temperature(self, temperature: float) -> float:
+        return self._mix_mass_weighted("h", temperature=temperature)
 
-    def _temperature_from_h(self, h_target: float) -> float:
-        def residual(T):
-            return self._enthalpy_from_T(T) - h_target
+    def _internal_energy_from_temperature(self, temperature: float) -> float:
+        return self._mix_mass_weighted("e", temperature=temperature)
 
-        Tmin = self.minimum_temperature
-        Tmax = self.maximum_temperature
+    def _temperature_from_enthalpy(self, enthalpy_target: float) -> float:
+        def residual(temperature):
+            return self._enthalpy_from_temperature(temperature) - enthalpy_target
 
-        Ts = np.linspace(Tmin, Tmax, 400)
-        rs = np.array([residual(T) for T in Ts])
+        return self._solve_temperature_from_residual(
+            residual,
+            "enthalpy",
+            enthalpy_target,
+        )
 
-        for T, r in zip(Ts, rs):
-            if abs(r) < 1e-8:
-                return float(T)
+    def _temperature_from_internal_energy(self, internal_energy_target: float) -> float:
+        def residual(temperature):
+            return self._internal_energy_from_temperature(temperature) - internal_energy_target
 
-        for T1, T2, r1, r2 in zip(Ts[:-1], Ts[1:], rs[:-1], rs[1:]):
-            if np.isfinite(r1) and np.isfinite(r2) and r1 * r2 <= 0:
-                sol = root_scalar(residual, bracket=(T1, T2), method="brentq")
+        return self._solve_temperature_from_residual(
+            residual,
+            "internal_energy",
+            internal_energy_target,
+        )
+
+    def _solve_temperature_from_residual(
+        self,
+        residual,
+        variable_name: str,
+        target_value: float,
+    ) -> float:
+
+        minimum_temperature = self.minimum_temperature
+        maximum_temperature = self.maximum_temperature
+
+        temperatures = np.linspace(minimum_temperature, maximum_temperature, 400)
+        residuals = np.array([residual(temperature) for temperature in temperatures])
+
+        for temperature, residual_value in zip(temperatures, residuals):
+            if abs(residual_value) < 1e-8:
+                return float(temperature)
+
+        for temperature_1, temperature_2, residual_1, residual_2 in zip(
+            temperatures[:-1],
+            temperatures[1:],
+            residuals[:-1],
+            residuals[1:],
+        ):
+            if (
+                np.isfinite(residual_1)
+                and np.isfinite(residual_2)
+                and residual_1 * residual_2 <= 0
+            ):
+                sol = root_scalar(
+                    residual,
+                    bracket=(temperature_1, temperature_2),
+                    method="brentq",
+                )
                 return float(sol.root)
 
         raise ValueError(
-            f"Could not solve ideal-gas T from h={h_target:.6g} J/kg "
-            f"over T=[{Tmin:.3f}, {Tmax:.3f}] K."
+            f"Could not solve ideal-gas temperature from "
+            f"{variable_name}={target_value:.6g} J/kg "
+            f"over temperature=[{minimum_temperature:.3f}, {maximum_temperature:.3f}] K."
         )
 
     def _partial_pressures(self) -> np.ndarray:
         self._require_pressure("Partial pressures")
-        return self._mole_fractions * self._P
+        return self._mole_fractions * self._pressure
 
     # ---------------- Fractions ---------------- #
 
@@ -205,12 +321,15 @@ class IdealGas:
     def mole_fractions(self, value: List[float]):
         if len(self._species_ids) == 1:
             raise ValueError("Cannot change mole fractions for a pure gas")
+
         if not np.isclose(sum(value), 1.0, atol=1e-6):
             raise ValueError("Mole fractions must sum to 1.0")
+
         self._mole_fractions = np.array(value, dtype=float)
         self._mass_fractions = self.mole_to_mass(self._species_ids, value)
-        if self._h is not None:
-            self._T = self._temperature_from_h(self._h)
+
+        if self._enthalpy is not None:
+            self._temperature = self._temperature_from_enthalpy(self._enthalpy)
 
     @property
     def mass_fractions(self) -> dict:
@@ -223,64 +342,154 @@ class IdealGas:
     def mass_fractions(self, value: List[float]):
         if len(self._species_ids) == 1:
             raise ValueError("Cannot change mass fractions for a pure gas")
+
         if not np.isclose(sum(value), 1.0, atol=1e-6):
             raise ValueError("Mass fractions must sum to 1.0")
+
         self._mass_fractions = np.array(value, dtype=float)
         self._mole_fractions = self.mass_to_mole(self._species_ids, value)
-        if self._h is not None:
-            self._T = self._temperature_from_h(self._h)
+
+        if self._enthalpy is not None:
+            self._temperature = self._temperature_from_enthalpy(self._enthalpy)
 
     # ---------------- State setters ---------------- #
 
     @property
     def pressure(self) -> float | None:
-        return self._P
+        return self._pressure
 
     @pressure.setter
     def pressure(self, value: float):
-        self._P = float(value)
+        self._pressure = float(value)
 
     @property
     def enthalpy(self) -> float:
-        return self._h
+        return self._enthalpy
 
     @enthalpy.setter
     def enthalpy(self, value: float):
-        self._h = float(value)
-        self._T = self._temperature_from_h(self._h)
+        self._enthalpy = float(value)
+        self._temperature = self._temperature_from_enthalpy(self._enthalpy)
+
+    @property
+    def internal_energy(self) -> float:
+        return self._internal_energy_from_temperature(self._temperature)
+
+    @internal_energy.setter
+    def internal_energy(self, value: float):
+        self._temperature = self._temperature_from_internal_energy(float(value))
+        self._enthalpy = self._enthalpy_from_temperature(self._temperature)
 
     @property
     def temperature(self) -> float:
-        return self._T
+        return self._temperature
 
     @temperature.setter
     def temperature(self, value: float):
-        self._T = float(value)
-        self._h = self._enthalpy_from_T(self._T)
+        self._temperature = float(value)
+        self._enthalpy = self._enthalpy_from_temperature(self._temperature)
 
     @property
+    def density(self) -> float:
+        self._require_pressure("Density")
+        return self._pressure / (self.gas_constant * self._temperature)
+
+    @density.setter
+    def density(self, value: float):
+        if self._temperature is None:
+            raise ValueError("Cannot set density without temperature.")
+        self._pressure = float(value) * self.gas_constant * self._temperature
+
+    @property
+    def pressure_temperature(self) -> Tuple[float | None, float]:
+        return self._pressure, self._temperature
+
+    @pressure_temperature.setter
+    def pressure_temperature(self, values: Tuple[float | None, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_temperature must be set with (pressure, temperature)")
+        self._set_state(pressure=values[0], temperature=values[1])
+
+    @property
+    def pressure_enthalpy(self) -> Tuple[float | None, float]:
+        return self._pressure, self._enthalpy
+
+    @pressure_enthalpy.setter
+    def pressure_enthalpy(self, values: Tuple[float | None, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_enthalpy must be set with (pressure, enthalpy)")
+        self._set_state(pressure=values[0], enthalpy=values[1])
+
+    @property
+    def pressure_internal_energy(self) -> Tuple[float | None, float]:
+        return self._pressure, self.internal_energy
+
+    @pressure_internal_energy.setter
+    def pressure_internal_energy(self, values: Tuple[float | None, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_internal_energy must be set with (pressure, internal_energy)")
+        self._set_state(pressure=values[0], internal_energy=values[1])
+
+    @property
+    def density_temperature(self) -> Tuple[float, float]:
+        return self.density, self._temperature
+
+    @density_temperature.setter
+    def density_temperature(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_temperature must be set with (density, temperature)")
+        self._set_state(density=values[0], temperature=values[1])
+
+    @property
+    def density_enthalpy(self) -> Tuple[float, float]:
+        return self.density, self._enthalpy
+
+    @density_enthalpy.setter
+    def density_enthalpy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_enthalpy must be set with (density, enthalpy)")
+        self._set_state(density=values[0], enthalpy=values[1])
+
+    @property
+    def density_internal_energy(self) -> Tuple[float, float]:
+        return self.density, self.internal_energy
+
+    @density_internal_energy.setter
+    def density_internal_energy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_internal_energy must be set with (density, internal_energy)")
+        self._set_state(density=values[0], internal_energy=values[1])
+
+    @property
+    def pressure_density(self) -> Tuple[float, float]:
+        return self._pressure, self.density
+
+    @pressure_density.setter
+    def pressure_density(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_density must be set with (pressure, density)")
+        self._set_state(pressure=values[0], density=values[1])
+
+    # Backward-compatible aliases
+    @property
     def HP(self) -> Tuple[float, float | None]:
-        return self._h, self._P
+        return self._enthalpy, self._pressure
 
     @HP.setter
     def HP(self, values: Tuple[float, float]):
         if not isinstance(values, (tuple, list)) or len(values) != 2:
-            raise ValueError("HP must be set with (h, P)")
-        self._h = float(values[0])
-        self._P = None if values[1] is None else float(values[1])
-        self._T = self._temperature_from_h(self._h)
+            raise ValueError("HP must be set with (enthalpy, pressure)")
+        self._set_state(enthalpy=values[0], pressure=values[1])
 
     @property
     def TP(self) -> Tuple[float, float | None]:
-        return self._T, self._P
+        return self._temperature, self._pressure
 
     @TP.setter
     def TP(self, values: Tuple[float, float]):
         if not isinstance(values, (tuple, list)) or len(values) != 2:
-            raise ValueError("TP must be set with (T, P)")
-        self._T = float(values[0])
-        self._P = None if values[1] is None else float(values[1])
-        self._h = self._enthalpy_from_T(self._T)
+            raise ValueError("TP must be set with (temperature, pressure)")
+        self._set_state(temperature=values[0], pressure=values[1])
 
     # ---------------- Thermo properties ---------------- #
 
@@ -297,11 +506,6 @@ class IdealGas:
         return 1.0
 
     @property
-    def density(self) -> float:
-        self._require_pressure("Density")
-        return self._P / (self.gas_constant * self._T)
-
-    @property
     def specific_volume(self) -> float:
         return 1.0 / self.density
 
@@ -315,11 +519,11 @@ class IdealGas:
 
     @property
     def specific_heat_cp(self) -> float:
-        return self._mix_mass_weighted("cp", T=self._T)
+        return self._mix_mass_weighted("cp", temperature=self._temperature)
 
     @property
     def specific_heat_cv(self) -> float:
-        return self._mix_mass_weighted("cv", T=self._T)
+        return self._mix_mass_weighted("cv", temperature=self._temperature)
 
     @property
     def specific_heat(self) -> float:
@@ -331,42 +535,58 @@ class IdealGas:
         return None if cv == 0 else self.specific_heat_cp / cv
 
     @property
-    def internal_energy(self) -> float:
-        return self._mix_mass_weighted("e", T=self._T)
-
-    @property
     def free_energy(self) -> float:
         self._require_pressure("Free energy")
         try:
-            return self._mix_mass_weighted("f", T=self._T, p=self._P)
+            return self._mix_mass_weighted(
+                "f",
+                temperature=self._temperature,
+                pressure=self._pressure,
+            )
         except Exception:
-            return self.internal_energy - self._T * self.entropy
+            return self.internal_energy - self._temperature * self.entropy
 
     @property
     def gibbs_energy(self) -> float:
         self._require_pressure("Gibbs energy")
         try:
             if not self._mixture:
-                return self._mix_mass_weighted("g", T=self._T, p=self._P)
+                return self._mix_mass_weighted(
+                    "g",
+                    temperature=self._temperature,
+                    pressure=self._pressure,
+                )
 
             vals = []
-            for wi, sp, pi in zip(self._mass_fractions, self._species, self._partial_pressures()):
-                vals.append(wi * float(np.asarray(sp.g(T=self._T, p=pi)).squeeze()))
+            for wi, sp, pi in zip(
+                self._mass_fractions,
+                self._species,
+                self._partial_pressures(),
+            ):
+                vals.append(wi * float(np.asarray(sp.g(T=self._temperature, p=pi)).squeeze()))
             return float(sum(vals))
 
         except Exception:
-            return self.enthalpy - self._T * self.entropy
+            return self.enthalpy - self._temperature * self.entropy
 
     @property
     def entropy(self) -> float:
         self._require_pressure("Entropy")
 
         if not self._mixture:
-            return self._mix_mass_weighted("s", T=self._T, p=self._P)
+            return self._mix_mass_weighted(
+                "s",
+                temperature=self._temperature,
+                pressure=self._pressure,
+            )
 
         vals = []
-        for wi, sp, pi in zip(self._mass_fractions, self._species, self._partial_pressures()):
-            vals.append(wi * float(np.asarray(sp.s(T=self._T, p=pi)).squeeze()))
+        for wi, sp, pi in zip(
+            self._mass_fractions,
+            self._species,
+            self._partial_pressures(),
+        ):
+            vals.append(wi * float(np.asarray(sp.s(T=self._temperature, p=pi)).squeeze()))
         return float(sum(vals))
 
     @property
@@ -379,7 +599,7 @@ class IdealGas:
 
     @property
     def speed_of_sound(self) -> float:
-        return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self._T))
+        return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self._temperature))
 
     @property
     def minimum_pressure(self) -> float:
@@ -434,11 +654,11 @@ class IdealGas:
             ("Phase", self.phase),
             ("Pressure [Pa]", self._safe(self.pressure, ".3e")),
             ("Temperature [K]", self._safe(self.temperature, ".2f")),
-            ("Density [kg/m³]", self._safe(self.density, ".3f") if self._P is not None else "N/A"),
+            ("Density [kg/m³]", self._safe(self.density, ".3f") if self._pressure is not None else "N/A"),
             ("Compressibility Z", self._safe(self.compressibility, ".3f")),
             ("Internal energy [J/kg]", self._safe(self.internal_energy, ".3e")),
             ("Enthalpy [J/kg]", self._safe(self.enthalpy, ".3e")),
-            ("Entropy [J/kg-K]", self._safe(self.entropy, ".3e") if self._P is not None else "N/A"),
+            ("Entropy [J/kg-K]", self._safe(self.entropy, ".3e") if self._pressure is not None else "N/A"),
             ("Cp [J/kg-K]", self._safe(self.specific_heat_cp, ".3f")),
             ("Cv [J/kg-K]", self._safe(self.specific_heat_cv, ".3f")),
             ("Gamma", self._safe(self.specific_heat_ratio, ".5f")),
@@ -452,10 +672,12 @@ class IdealGas:
 
     def __repr__(self) -> str:
         species_str = ", ".join(self._display_names)
-        P_str = "None" if self._P is None else f"{self._P:.3e}"
+        pressure_str = "None" if self._pressure is None else f"{self._pressure:.3e}"
         return (
             f"{self.__class__.__name__}(species=[{species_str}], "
-            f"P={P_str} Pa, h={self._h:.3e} J/kg, T={self.temperature:.2f} K)"
+            f"pressure={pressure_str} Pa, "
+            f"enthalpy={self._enthalpy:.3e} J/kg, "
+            f"temperature={self.temperature:.2f} K)"
         )
 
     # ---------------- Utilities ---------------- #
@@ -527,7 +749,10 @@ class IdealGas:
         return float(np.asarray(pm.get(species_id).mw()).squeeze())
 
     def _molar_masses(self) -> np.ndarray:
-        return np.array([self._molar_mass_of(sid) for sid in self._species_ids], dtype=float)
+        return np.array(
+            [self._molar_mass_of(sid) for sid in self._species_ids],
+            dtype=float,
+        )
 
     @staticmethod
     def mole_to_mass(species_ids: List[str], mole_fractions: List[float]):
@@ -545,23 +770,3 @@ class IdealGas:
         M = np.array([IdealGas._molar_mass_of(sid) for sid in species_ids])
         inv = w / M
         return inv / inv.sum()
-
-
-if __name__ == "__main__":
-    gas = IdealGas("Nitrogen", T=300)
-    print(gas)
-
-    print("-------------------")
-
-    gas.pressure = 101325
-    print(gas)
-
-    print("-------------------")
-
-    air = IdealGas({"Nitrogen": 0.78, "Oxygen": 0.21, "Argon": 0.01}, basis="mole", T=298.15)
-    print(air)
-
-    print("-------------------")
-
-    same_air = IdealGas({"Nitrogen": 0.78, "Oxygen": 0.21, "Argon": 0.01}, basis="mole", h=air.enthalpy)
-    print(same_air)

@@ -13,13 +13,13 @@ manifold_density = State()
 
 # --- Fluid Definition ---
 Fluid.add_alias("Octane", "n-Octane")
-fluid = 'Water'
+fluid = 'Octane'
 
-source_fluid = GeneralFluidLookupfromPT("Source Fluid", SimpleNetwork, fluid,
+source_fluid = FluidLookup("Source Fluid", SimpleNetwork, fluid,
                              pressure=20 * PSIA_TO_PA,
-                             temperature=300)
+                             enthalpy=Fluid(fluid,pressure=20 * PSIA_TO_PA, temperature=300).enthalpy)
 
-manifold_fluid = GeneralFluidLookupfromPT("Manifold Fluid", SimpleNetwork, fluid,
+manifold_fluid = FluidLookup("Manifold Fluid", SimpleNetwork, fluid,
                              pressure= 10 * PSIA_TO_PA,
                              temperature=300,
                              density=manifold_density)
@@ -87,6 +87,6 @@ source_pressure_balance = Balance("Balance source pressure until mdot = 0.6",
                           #bounds=(0, 3e5),
                           #keep_feasible=True)
 
-print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=True))
+print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))
 
 #Fluid.show_available_fluids()

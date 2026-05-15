@@ -118,12 +118,12 @@ class Component(ABC):
 
     def __repr__(self):
         return f"Component ({self.__class__.__name__}: {self.name})"
-        
+            
     def __str__(self):
 
         lines = [f"Component {self.name} ({self.__class__.__name__})"]
 
-        skip_attrs = {"network"}
+        skip_attrs = {"network"} | self.ignored_export_attributes
 
         for attr, value in self.__dict__.items():
 

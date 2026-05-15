@@ -15,9 +15,31 @@ class Fluid:
 
     Notes
     -----
-    Public API is intentionally kept the same as the old pyfluids-backed class:
-    Fluid(..., basis="mass", P=None, h=None, T=None, Q=None), HP, pressure,
-    enthalpy, temperature, density, quality, etc.
+    Uses full property names:
+
+        Fluid(..., pressure=..., temperature=...)
+        Fluid(..., pressure=..., enthalpy=...)
+        Fluid(..., pressure=..., quality=...)
+        Fluid(..., temperature=..., quality=...)
+        Fluid(..., density=..., internal_energy=...)
+        Fluid(..., pressure=..., density=...)
+        Fluid(..., pressure=..., internal_energy=...)
+        Fluid(..., temperature=..., density=...)
+        Fluid(..., density=..., enthalpy=...)
+        Fluid(..., temperature=..., enthalpy=...)
+
+    Pair setters/getters:
+
+        pressure_temperature
+        pressure_enthalpy
+        pressure_quality
+        temperature_quality
+        density_internal_energy
+        pressure_density
+        pressure_internal_energy
+        temperature_density
+        density_enthalpy
+        temperature_enthalpy
     """
 
     _ALIASES = {
@@ -46,32 +68,62 @@ class Fluid:
         getattr(CP, "iphase_critical_point", -999): "CriticalPoint",
     }
 
+    _FLASH_PAIRS = {
+        frozenset(("pressure", "temperature")): (
+            "PT_INPUTS",
+            ("pressure", "temperature"),
+        ),
+        frozenset(("pressure", "enthalpy")): (
+            "HmassP_INPUTS",
+            ("enthalpy", "pressure"),
+        ),
+        frozenset(("pressure", "quality")): (
+            "PQ_INPUTS",
+            ("pressure", "quality"),
+        ),
+        frozenset(("temperature", "quality")): (
+            "QT_INPUTS",
+            ("quality", "temperature"),
+        ),
+        frozenset(("density", "internal_energy")): (
+            "DmassUmass_INPUTS",
+            ("density", "internal_energy"),
+        ),
+        frozenset(("pressure", "density")): (
+            "DmassP_INPUTS",
+            ("density", "pressure"),
+        ),
+        frozenset(("pressure", "internal_energy")): (
+            "PUmass_INPUTS",
+            ("pressure", "internal_energy"),
+        ),
+        frozenset(("temperature", "density")): (
+            "DmassT_INPUTS",
+            ("density", "temperature"),
+        ),
+        frozenset(("density", "enthalpy")): (
+            "DmassHmass_INPUTS",
+            ("density", "enthalpy"),
+        ),
+        frozenset(("temperature", "enthalpy")): (
+            "HmassT_INPUTS",
+            ("enthalpy", "temperature"),
+        ),
+    }
+
     def __init__(
         self,
         fluid: Union[str, Dict[str, float]],
         basis: str = "mass",
-        P: float = None,
-        h: float = None,
-        T: float = None,
-        Q: float = None,
+        pressure: float = None,
+        enthalpy: float = None,
+        temperature: float = None,
+        quality: float = None,
+        density: float = None,
+        internal_energy: float = None,
     ):
         """
         Initialize a Fluid state.
-
-        Parameters
-        ----------
-        fluid : str or dict
-            Pure fluid name or dictionary of {fluid_name: fraction}.
-        basis : str
-            "mole" or "mass" basis for mixture fractions. Default is "mass".
-        P : float, optional
-            Absolute pressure in Pa.
-        h : float, optional
-            Specific enthalpy in J/kg.
-        T : float, optional
-            Absolute temperature in K.
-        Q : float, optional
-            Vapor quality from 0 to 1.
         """
         valid_fluids = Fluid.get_available_fluids()
 
@@ -146,22 +198,31 @@ class Fluid:
         self._h = None
         self._fluid_string = "&".join(self._fluids)
         self._backend = self._build_state()
-        self._pyfluid = self._backend  # backward-compatible internal alias
+        self._pyfluid = self._backend
 
-        if P is not None and h is not None:
-            self._P, self._h = float(P), float(h)
-        elif P is not None and T is not None:
-            self._P = float(P)
-            self._h = self._enthalpy_from_PT(float(P), float(T))
-        elif P is not None and Q is not None:
-            self._P = float(P)
-            self._h = self._enthalpy_from_PQ(float(P), float(Q))
-        elif T is not None and Q is not None:
-            self._P, self._h = self._state_from_TQ(float(T), float(Q))
-        else:
-            raise LookupError("Please provide at least two thermodynamic properties!")
+        flash_values = {
+            "pressure": pressure,
+            "enthalpy": enthalpy,
+            "temperature": temperature,
+            "quality": quality,
+            "density": density,
+            "internal_energy": internal_energy,
+        }
 
-        self.set_pyfluid()
+        provided = {
+            key: value
+            for key, value in flash_values.items()
+            if value is not None
+        }
+
+        if len(provided) != 2:
+            raise LookupError(
+                "Please provide exactly two thermodynamic properties. "
+                "Supported names are pressure, temperature, enthalpy, "
+                "quality, density, and internal_energy."
+            )
+
+        self._set_state_from_named_pair(provided)
 
     # ---------------- Core ---------------- #
     def _build_state(self):
@@ -176,8 +237,57 @@ class Fluid:
         self._backend.update(input_pair, float(value1), float(value2))
         self._pyfluid = self._backend
 
+    def _sync_from_backend(self):
+        """Synchronize cached pressure and enthalpy from the backend state."""
+        self._P = float(self._backend.p())
+        self._h = float(self._backend.hmass())
+        self._pyfluid = self._backend
+
+    def _set_state_from_named_pair(self, values: dict) -> None:
+        keys = frozenset(values.keys())
+
+        if keys not in Fluid._FLASH_PAIRS:
+            raise ValueError(
+                f"Unsupported flash pair: {sorted(keys)}. "
+                f"Supported pairs are: {self.available_flash_pairs()}."
+            )
+
+        if keys == frozenset(("pressure", "enthalpy")) and self._mixture:
+            pressure = float(values["pressure"])
+            enthalpy = float(values["enthalpy"])
+
+            T, Q = Fluid.get_temperature_and_quality(
+                self._backend,
+                pressure,
+                enthalpy,
+            )
+
+            if 0.0 < Q < 1.0:
+                self._update_state(CP.PQ_INPUTS, pressure, Q)
+            else:
+                self._update_state(CP.PT_INPUTS, pressure, T)
+
+            self._sync_from_backend()
+            return
+
+        input_pair_name, order = Fluid._FLASH_PAIRS[keys]
+
+        if not hasattr(CP, input_pair_name):
+            raise ValueError(
+                f"CoolProp does not expose {input_pair_name} in this installation."
+            )
+
+        input_pair = getattr(CP, input_pair_name)
+        value1 = values[order[0]]
+        value2 = values[order[1]]
+
+        self._update_state(input_pair, value1, value2)
+        self._sync_from_backend()
+
+
+
     def set_pyfluid(self):
-        """Rebuild backend CoolProp state using current P and h."""
+        """Rebuild backend CoolProp state using current pressure and enthalpy."""
         if self._mixture:
             T, Q = Fluid.get_temperature_and_quality(self._backend, self._P, self._h)
             if 0.0 < Q < 1.0:
@@ -188,17 +298,40 @@ class Fluid:
             self._update_state(CP.HmassP_INPUTS, self._h, self._P)
 
     # ---------------- Internal state helpers ---------------- #
-    def _enthalpy_from_PT(self, P: float, T: float) -> float:
-        self._update_state(CP.PT_INPUTS, P, T)
+    def _enthalpy_from_pressure_temperature(self, pressure: float, temperature: float) -> float:
+        self._set_state_from_named_pair(
+            {
+                "pressure": pressure,
+                "temperature": temperature,
+            }
+        )
         return float(self._backend.hmass())
 
-    def _enthalpy_from_PQ(self, P: float, Q: float) -> float:
-        self._update_state(CP.PQ_INPUTS, P, Q)
+    def _enthalpy_from_pressure_quality(self, pressure: float, quality: float) -> float:
+        self._set_state_from_named_pair(
+            {
+                "pressure": pressure,
+                "quality": quality,
+            }
+        )
         return float(self._backend.hmass())
 
-    def _state_from_TQ(self, T: float, Q: float) -> Tuple[float, float]:
-        self._update_state(CP.QT_INPUTS, Q, T)
+    def _state_from_temperature_quality(self, temperature: float, quality: float) -> Tuple[float, float]:
+        self._set_state_from_named_pair(
+            {
+                "temperature": temperature,
+                "quality": quality,
+            }
+        )
         return float(self._backend.p()), float(self._backend.hmass())
+
+    def _state_from_density_internal_energy(self, density: float, internal_energy: float) -> None:
+        self._set_state_from_named_pair(
+            {
+                "density": density,
+                "internal_energy": internal_energy,
+            }
+        )
 
     def _keyed_output(self, key, default=None):
         try:
@@ -212,6 +345,27 @@ class Fluid:
         except Exception:
             return default
 
+
+
+    def _update_state(self, input_pair, value1: float, value2: float):
+        """Update CoolProp state and keep the old internal alias current."""
+
+        try:
+            self._backend.update(input_pair, float(value1), float(value2))
+
+        except Exception:
+            if self._mixture:
+                try:
+                    self._backend.specify_phase(CP.iphase_gas)
+                    self._backend.update(input_pair, float(value1), float(value2))
+                    self._backend.unspecify_phase()
+                except Exception:
+                    self._backend.unspecify_phase()
+                    raise
+            else:
+                raise
+
+        self._pyfluid = self._backend
     # ---------------- Fractions ---------------- #
     @property
     def mole_fractions(self) -> dict:
@@ -259,9 +413,7 @@ class Fluid:
 
     @pressure.setter
     def pressure(self, value: float):
-        self._P = float(value)
-        if self._h is not None:
-            self.set_pyfluid()
+        self.pressure_enthalpy = (float(value), self.enthalpy)
 
     @property
     def enthalpy(self) -> float:
@@ -270,42 +422,187 @@ class Fluid:
 
     @enthalpy.setter
     def enthalpy(self, value: float):
-        self._h = float(value)
-        if self._P is not None:
-            self.set_pyfluid()
+        self.pressure_enthalpy = (self.pressure, float(value))
 
     @property
-    def HP(self) -> Tuple[float, float]:
-        """Return (h [J/kg], P [Pa])."""
-        return self._h, self._P
+    def pressure_enthalpy(self) -> Tuple[float, float]:
+        """Return (pressure [Pa], enthalpy [J/kg])."""
+        return self.pressure, self.enthalpy
 
-    @HP.setter
-    def HP(self, values: Tuple[float, float]):
-        """Update enthalpy and pressure simultaneously."""
+    @pressure_enthalpy.setter
+    def pressure_enthalpy(self, values: Tuple[float, float]):
+        """Update state from pressure and enthalpy."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
-            raise ValueError("HP must be set with (P, h)")
-        self._h, self._P = float(values[0]), float(values[1])
-        self.set_pyfluid()
+            raise ValueError("pressure_enthalpy must be set with (pressure, enthalpy)")
+
+        self._set_state_from_named_pair(
+            {
+                "pressure": float(values[0]),
+                "enthalpy": float(values[1]),
+            }
+        )
 
     @property
-    def TP(self) -> Tuple[float, float]:
-        """Return (T [K], P [Pa])."""
-        return self.temperature, self._P
+    def pressure_temperature(self) -> Tuple[float, float]:
+        """Return (pressure [Pa], temperature [K])."""
+        return self.pressure, self.temperature
 
-
-    @TP.setter
-    def TP(self, values: Tuple[float, float]):
-        """Update temperature and pressure simultaneously."""
+    @pressure_temperature.setter
+    def pressure_temperature(self, values: Tuple[float, float]):
+        """Update state from pressure and temperature."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
-            raise ValueError("TP must be set with (T, P)")
+            raise ValueError("pressure_temperature must be set with (pressure, temperature)")
 
-        T = float(values[0])
-        P = float(values[1])
+        self._set_state_from_named_pair(
+            {
+                "pressure": float(values[0]),
+                "temperature": float(values[1]),
+            }
+        )
 
-        self._P = P
-        self._h = self._enthalpy_from_PT(P, T)
+    @property
+    def pressure_quality(self) -> Tuple[float, float]:
+        """Return (pressure [Pa], quality [-])."""
+        return self.pressure, self.quality
 
-        self.set_pyfluid()
+    @pressure_quality.setter
+    def pressure_quality(self, values: Tuple[float, float]):
+        """Update state from pressure and quality."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_quality must be set with (pressure, quality)")
+
+        self._set_state_from_named_pair(
+            {
+                "pressure": float(values[0]),
+                "quality": float(values[1]),
+            }
+        )
+
+    @property
+    def temperature_quality(self) -> Tuple[float, float]:
+        """Return (temperature [K], quality [-])."""
+        return self.temperature, self.quality
+
+    @temperature_quality.setter
+    def temperature_quality(self, values: Tuple[float, float]):
+        """Update state from temperature and quality."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("temperature_quality must be set with (temperature, quality)")
+
+        self._set_state_from_named_pair(
+            {
+                "temperature": float(values[0]),
+                "quality": float(values[1]),
+            }
+        )
+
+    @property
+    def density_internal_energy(self) -> Tuple[float, float]:
+        """Return (density [kg/m^3], internal_energy [J/kg])."""
+        return self.density, self.internal_energy
+
+    @density_internal_energy.setter
+    def density_internal_energy(self, values: Tuple[float, float]):
+        """Update state from density and internal energy."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_internal_energy must be set with (density, internal_energy)")
+
+        self._set_state_from_named_pair(
+            {
+                "density": float(values[0]),
+                "internal_energy": float(values[1]),
+            }
+        )
+
+    @property
+    def pressure_density(self) -> Tuple[float, float]:
+        """Return (pressure [Pa], density [kg/m^3])."""
+        return self.pressure, self.density
+
+    @pressure_density.setter
+    def pressure_density(self, values: Tuple[float, float]):
+        """Update state from pressure and density."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_density must be set with (pressure, density)")
+
+        self._set_state_from_named_pair(
+            {
+                "pressure": float(values[0]),
+                "density": float(values[1]),
+            }
+        )
+
+    @property
+    def pressure_internal_energy(self) -> Tuple[float, float]:
+        """Return (pressure [Pa], internal_energy [J/kg])."""
+        return self.pressure, self.internal_energy
+
+    @pressure_internal_energy.setter
+    def pressure_internal_energy(self, values: Tuple[float, float]):
+        """Update state from pressure and internal energy."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_internal_energy must be set with (pressure, internal_energy)")
+
+        self._set_state_from_named_pair(
+            {
+                "pressure": float(values[0]),
+                "internal_energy": float(values[1]),
+            }
+        )
+
+    @property
+    def temperature_density(self) -> Tuple[float, float]:
+        """Return (temperature [K], density [kg/m^3])."""
+        return self.temperature, self.density
+
+    @temperature_density.setter
+    def temperature_density(self, values: Tuple[float, float]):
+        """Update state from temperature and density."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("temperature_density must be set with (temperature, density)")
+
+        self._set_state_from_named_pair(
+            {
+                "temperature": float(values[0]),
+                "density": float(values[1]),
+            }
+        )
+
+    @property
+    def density_enthalpy(self) -> Tuple[float, float]:
+        """Return (density [kg/m^3], enthalpy [J/kg])."""
+        return self.density, self.enthalpy
+
+    @density_enthalpy.setter
+    def density_enthalpy(self, values: Tuple[float, float]):
+        """Update state from density and enthalpy."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_enthalpy must be set with (density, enthalpy)")
+
+        self._set_state_from_named_pair(
+            {
+                "density": float(values[0]),
+                "enthalpy": float(values[1]),
+            }
+        )
+
+    @property
+    def temperature_enthalpy(self) -> Tuple[float, float]:
+        """Return (temperature [K], enthalpy [J/kg])."""
+        return self.temperature, self.enthalpy
+
+    @temperature_enthalpy.setter
+    def temperature_enthalpy(self, values: Tuple[float, float]):
+        """Update state from temperature and enthalpy."""
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("temperature_enthalpy must be set with (temperature, enthalpy)")
+
+        self._set_state_from_named_pair(
+            {
+                "temperature": float(values[0]),
+                "enthalpy": float(values[1]),
+            }
+        )
 
     # ---------------- Thermo properties ---------------- #
     @property
@@ -316,7 +613,7 @@ class Fluid:
     def temperature(self) -> float:
         """Absolute temperature in K."""
         return float(self._backend.T())
-    
+
     @temperature.setter
     def temperature(self, value: float):
         """
@@ -330,14 +627,20 @@ class Fluid:
                 "Set pressure first."
             )
 
-        T = float(value)
-
-        self._h = self._enthalpy_from_PT(self._P, T)
-        self.set_pyfluid()
+        self.pressure_temperature = (self.pressure, float(value))
 
     @property
     def phase(self) -> str:
         """Thermodynamic phase name, mapped to the old pyfluids-style names."""
+
+        if self._mixture:
+            try:
+                Z = self.compressibility
+                if Z is not None and Z > 0.2:
+                    return "Gas"
+            except Exception:
+                pass
+
         try:
             return Fluid._PHASE_NAMES.get(int(self._backend.phase()), "Unknown")
         except Exception:
@@ -377,6 +680,13 @@ class Fluid:
         """Mass density in kg/m^3."""
         return float(self._backend.rhomass())
 
+    @density.setter
+    def density(self, value: float):
+        """
+        Update density while holding internal energy constant.
+        """
+        self.density_internal_energy = (float(value), self.internal_energy)
+
     @property
     def dynamic_viscosity(self) -> float:
         """Dynamic viscosity in Pa-s."""
@@ -393,14 +703,19 @@ class Fluid:
     @property
     def freezing_temperature(self) -> float:
         """Freezing/melting temperature in K when available; otherwise Tmin."""
-        # CoolProp does not expose a universal pyfluids-equivalent freezing point.
-        # Tmin is the most useful direct replacement for bounds checking.
         return self.minimum_temperature
 
     @property
     def internal_energy(self) -> float:
         """Mass-specific internal energy in J/kg."""
         return float(self._backend.umass())
+
+    @internal_energy.setter
+    def internal_energy(self, value: float):
+        """
+        Update internal energy while holding density constant.
+        """
+        self.density_internal_energy = (self.density, float(value))
 
     @property
     def kinematic_viscosity(self) -> float:
@@ -461,7 +776,6 @@ class Fluid:
         except Exception:
             return None
 
-
     @property
     def specific_heat_cp(self) -> float:
         """Cp in J/kg-K."""
@@ -483,13 +797,11 @@ class Fluid:
         """Backward-compatible alias for Cp."""
         return self.specific_heat_cp
 
-
     @property
     def specific_heat_ratio(self) -> float:
         """
         Specific heat ratio gamma = Cp/Cv.
         """
-
         try:
             cp = self.specific_heat_cp
             cv = self.specific_heat_cv
@@ -501,7 +813,6 @@ class Fluid:
 
         except Exception:
             return None
-        
 
     @property
     def specific_volume(self) -> float:
@@ -543,23 +854,27 @@ class Fluid:
     @property
     def quality(self) -> float:
         """
-        Vapor quality from 0 to 1. Only physically meaningful in TwoPhase.
+        Vapor quality from 0 to 1.
 
-        Returns 0.0 for liquid-like single phase and 1.0 for gas/supercritical
-        single phase, matching the convention in the old class.
+        For gas mixtures, return 1.0 if phase is gas-like.
         """
+
         ph = self.phase
+
         if ph == "TwoPhase":
             try:
                 return float(self._backend.Q())
             except Exception:
                 return float("nan")
+
         if ph in ("Gas", "Supercritical", "SupercriticalGas"):
             return 1.0
+
         if ph in ("Liquid", "SupercriticalLiquid"):
             return 0.0
+
         return float("nan")
-    
+
     @quality.setter
     def quality(self, value: float):
         """
@@ -578,12 +893,11 @@ class Fluid:
         if not (0.0 <= Q <= 1.0):
             raise ValueError("Quality must be between 0 and 1.")
 
-        self._h = self._enthalpy_from_PQ(self._P, Q)
-        self.set_pyfluid()
+        self.pressure_quality = (self.pressure, Q)
 
     @property
     def saturation_temperature(self) -> float:
-        """Saturation temperature in K for current pressure, only if P <= Pc."""
+        """Saturation temperature in K for current pressure, only if pressure <= Pc."""
         pc = self.critical_pressure
         if pc is not None and self.pressure > pc:
             return None
@@ -631,14 +945,15 @@ class Fluid:
         species_str = ", ".join(self._display_names)
         return (
             f"{self.__class__.__name__}(species=[{species_str}], "
-            f"P={self._P:.3e} Pa, h={self._h:.3e} J/kg, T={self.temperature:.2f} K)"
+            f"pressure={self._P:.3e} Pa, "
+            f"enthalpy={self._h:.3e} J/kg, "
+            f"temperature={self.temperature:.2f} K)"
         )
 
     # ---------------- Utilities ---------------- #
     @staticmethod
     def _alias_key(name: str) -> str:
         return name.strip().lower().replace(" ", "").replace("_", "-")
-
 
     @classmethod
     def _normalize_name(cls, user_name: str) -> Tuple[str, str]:
@@ -651,26 +966,21 @@ class Fluid:
         backend = cls._ALIASES.get(key, user_name)
         return backend, display
 
-
     @classmethod
     def add_alias(cls, alias: str, coolprop_name: str) -> None:
         cls._ALIASES[cls._alias_key(alias)] = coolprop_name
-
 
     @classmethod
     def add_aliases(cls, aliases: dict[str, str]) -> None:
         for alias, coolprop_name in aliases.items():
             cls.add_alias(alias, coolprop_name)
 
-
     @classmethod
     def remove_alias(cls, alias: str) -> None:
         cls._ALIASES.pop(cls._alias_key(alias), None)
 
-
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
-
         width = max(len(alias) for alias in cls._ALIASES)
 
         print("Fluid Aliases")
@@ -707,7 +1017,7 @@ class Fluid:
         return inv / inv.sum()
 
     @staticmethod
-    def get_temperature_and_quality(fluid, P: float, target_enthalpy: float) -> Tuple[float, float]:
+    def get_temperature_and_quality(fluid, pressure: float, target_enthalpy: float) -> Tuple[float, float]:
         """
         Given a CoolProp AbstractState, pressure, and enthalpy, return (T, Q).
 
@@ -716,11 +1026,11 @@ class Fluid:
         saturated liquid/vapor enthalpies, then solve T at fixed P outside dome.
         """
         try:
-            fluid.update(CP.PQ_INPUTS, P, 0.0)
+            fluid.update(CP.PQ_INPUTS, pressure, 0.0)
             h_liquid = float(fluid.hmass())
             T_sat = float(fluid.T())
 
-            fluid.update(CP.PQ_INPUTS, P, 1.0)
+            fluid.update(CP.PQ_INPUTS, pressure, 1.0)
             h_vapor = float(fluid.hmass())
         except Exception:
             h_liquid = None
@@ -736,7 +1046,7 @@ class Fluid:
 
         def residual(T):
             try:
-                fluid.update(CP.PT_INPUTS, P, T)
+                fluid.update(CP.PT_INPUTS, pressure, T)
                 return float(fluid.hmass()) - h
             except Exception:
                 return np.nan
@@ -750,7 +1060,6 @@ class Fluid:
         except Exception:
             Tmax = 5000.0
 
-        # Build a robust bracket by scanning the valid temperature range.
         Ts = np.linspace(Tmin * 1.000001, Tmax * 0.999999, 300)
         vals = []
         for T in Ts:
@@ -770,8 +1079,8 @@ class Fluid:
 
         if bracket is None:
             raise ValueError(
-                f"Could not find a valid temperature bracket for P={P:.6g} Pa, "
-                f"h={h:.6g} J/kg over T=[{Tmin:.6g}, {Tmax:.6g}] K."
+                f"Could not find a valid temperature bracket for pressure={pressure:.6g} Pa, "
+                f"enthalpy={h:.6g} J/kg over T=[{Tmin:.6g}, {Tmax:.6g}] K."
             )
 
         if bracket[0] == bracket[1]:
@@ -802,16 +1111,10 @@ class Fluid:
         """Return available CoolProp fluid names."""
         return sorted(CP.get_global_param_string("FluidsList").split(","))
 
+    @staticmethod
+    def available_flash_pairs():
+        return sorted(
+            "-".join(sorted(pair))
+            for pair in Fluid._FLASH_PAIRS
+        )
 
-if __name__ == "__main__":
-    # f = Fluid({"Nitrogen": 0.78, "Oxygen": 0.21, "Argon": 0.01}, basis="mole", P=101325, T=298.15)
-    # f = Fluid({"Nitrogen": 1}, P=101325, h=311200)
-    # f = Fluid("Methane", P=3e6, Q=0.1)
-    f = Fluid("LOX", P=450*6894, T=90)
-    print(f)
-    print(f.minimum_pressure)
-    print(f.density)
-
-    print("-------------------")
-    f = Fluid("Air", P=101325, T=298.15)
-    print(f)
