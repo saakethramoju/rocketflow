@@ -9,6 +9,15 @@ if TYPE_CHECKING:
     from System import Network
 
 
+class Boundary(Component):
+    
+    def __init__(self, 
+                 name: str,
+                 network: Network,
+                 pressure: State,
+                 temperature: State):
+        self.setup()
+
 class PressureBoundary(Component):
 
     def __init__(self, 
