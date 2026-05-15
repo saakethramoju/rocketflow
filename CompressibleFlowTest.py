@@ -54,11 +54,11 @@ Runline = CircularPipeDarcyWeisbach("Line 1", CompressibleFlowNetwork,
                       dynamic_viscosity=tank_liquid.dynamic_viscosity,
                       roughness=0.1e-3)
 
-'''
+
 RegCd_Balance = Balance("Balance reg Cd to give a certain set pressure", CompressibleFlowNetwork,
                         variable=PressReg.discharge_coefficient,
-                        function=PressReg.set_pressure - 5e5)
-'''
+                        function=Runline.mass_flow - 1.0)
+
 
 TankPressureBalance = Balance(
                         "Tank pressure volume balance",
@@ -66,4 +66,4 @@ TankPressureBalance = Balance(
                         variable=TankUllage.pressure,
                         function=PressReg.mass_flow / ullage_gas.density - Runline.mass_flow / tank_liquid.density)
 
-print(SteadyState(CompressibleFlowNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))
+print(SteadyState(CompressibleFlowNetwork).solve(return_type='dataframe', verbose=True, static=False))
