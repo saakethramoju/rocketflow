@@ -76,12 +76,43 @@ class Network:
         self._validate_no_iteration_overlap()
         return [var.value for var in self.collect_all_iteration_variables()]
 
+
     @property
     def residuals(self) -> list[float]:
-        return (
-            [r for comp in self.component_list for r in comp.residuals]
-            + [r for bal in self.balance_list for r in bal.residuals]
-        )
+        residuals = []
+
+        for comp in self.component_list:
+            try:
+                comp_residuals = comp.residuals
+            except Exception as e:
+                original_msg = str(e).splitlines()[0]
+
+                raise RuntimeError(
+                    f"Failed while evaluating residuals for component `{comp.name}` "
+                    f"of type `{type(comp).__name__}`.\n\n"
+                    "A State used inside this component's residual equations is probably "
+                    "unassigned.\n\n"
+                    "Likely fixes:\n"
+                    "  - Give the missing State an initial value\n"
+                    "  - Connect it to another component that computes it\n"
+                    "  - Make it an iteration variable\n"
+                    "  - If this is a static/transient-only quantity, do not use it in "
+                    "steady-state residuals\n\n"
+                    f"Original error: {original_msg}"
+                ) from None
+
+            if isinstance(comp_residuals, (list, tuple)):
+                residuals.extend(comp_residuals)
+            else:
+                residuals.append(comp_residuals)
+
+        balance_residuals = [
+            r for balance in self.balance_list for r in balance.residuals
+        ]
+
+        residuals.extend(balance_residuals)
+
+        return residuals
     
     @property
     def residual_scalars(self) -> list[float]:

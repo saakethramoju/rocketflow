@@ -70,9 +70,12 @@ class SteadyState:
 
         Behavior
         --------
-        - If `static=True`, or the network has no iteration variables
-        and no residual equations, the network is only evaluated once
+        - If `static=True`, the network is only evaluated once
         without nonlinear iteration.
+
+        - If the network has no iteration variables and no residual
+        equations, the network is only evaluated once without nonlinear
+        iteration.
 
         - `root()` is used for square, unconstrained systems:
             number of residuals == number of iteration variables
@@ -84,16 +87,15 @@ class SteadyState:
 
         - If `root()` fails to converge, the solver automatically
         falls back to `least_squares()`.
-
-        Requirements
-        ------------
-        The system must have at least as many residual equations as
-        iteration variables.
-
-        After convergence, the final solution values are reassigned
-        to the network and all component states are re-evaluated
-        before export.
         """
+
+        if static:
+            return self.static_evaluate(
+                filename=filename,
+                return_type=return_type,
+                verbose=verbose,
+            )
+
         x0 = np.array(self.network.iteration_values, dtype=float)
 
         self.network.pre_evaluation()
@@ -104,7 +106,7 @@ class SteadyState:
         no_iteration_variables = len(x0) == 0
         no_residuals = len(r0) == 0
 
-        if static or (no_iteration_variables and no_residuals):
+        if no_iteration_variables and no_residuals:
             return self.static_evaluate(
                 filename=filename,
                 return_type=return_type,
@@ -148,7 +150,6 @@ class SteadyState:
         if verbose:
             self._verbose_print(sol, solver_name)
 
-
         final_residual = np.array(sol.fun, dtype=float)
 
         if not sol.success or np.max(np.abs(final_residual)) > 1e3:
@@ -159,14 +160,14 @@ class SteadyState:
                 f"max |residual| = {np.max(np.abs(final_residual)):.3e}"
             )
 
-        # assign final solution back into network
         self.network.assign_iteration_values(list(sol.x))
-        # self.network.pre_evaluation()
         self.network.evaluate_states()
 
         solution = self.network.save(filename=filename, return_type=return_type)
 
         return solution
+
+
 
     def _verbose_print(self, sol, solver_name: str) -> None:
         print("\n" + "=" * 50)

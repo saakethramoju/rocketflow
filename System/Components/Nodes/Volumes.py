@@ -16,8 +16,8 @@ class SimpleIncompressibleVolume(Component):
                  name: str,
                  network: Network,
                  pressure: State ,
-                 density: State,
                  volume: float,
+                 density: State | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out: State | None = None):
 
@@ -39,8 +39,8 @@ class IsothermalIncompressibleVolume(Component):
                  network: Network,
                  pressure: State,
                  temperature: State,
-                 density: State,
                  volume: float,
+                 density: State | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out: State | None = None):
         
@@ -62,8 +62,8 @@ class SimpleVolume(Component):
                  network: Network,
                  pressure: State,
                  temperature: State,
-                 density: State,
                  volume: float,
+                 density: State | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out: State | None = None,
                  enthalpy_in: State | None = None,
