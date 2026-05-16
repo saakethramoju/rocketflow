@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from System import Component, State
-from Utilities import Fluid
 
 if TYPE_CHECKING:
     from System import Network
@@ -61,24 +60,24 @@ class SimpleVolume(Component):
                  name:str,
                  network: Network,
                  pressure: State,
-                 temperature: State,
+                 enthalpy: State,
                  volume: float,
+                 temperature: State | None = None,
                  density: State | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out: State | None = None,
-                 enthalpy_in: State | None = None,
-                 enthalpy_out: State | None = None):
+                 enthalpy_in: State | None = None,):
         
         self.setup()
     
     @property
     def iteration_variables(self) -> list[State]:
-        return [self.pressure, self.temperature]
+        return [self.pressure, self.enthalpy]
 
     @property
     def residuals(self) -> list[float]:
         return [self.mass_flow_in.value - self.mass_flow_out.value,
-                (self.mass_flow_in.value * self.enthalpy_in.value) - (self.mass_flow_out.value * self.enthalpy_out.value)]
+                (self.mass_flow_in.value * self.enthalpy_in.value) - (self.mass_flow_out.value * self.enthalpy.value)]
     '''
     @property
     def residual_scalar(self) -> list[float]:

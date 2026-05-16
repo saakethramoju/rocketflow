@@ -8,7 +8,6 @@ from Utilities import Fluid, IdealGas, FluidRegistry
 if TYPE_CHECKING:
     from System import Network
 
-
 class IdealGasLookup(Component):
 
     _REFERENCE_TEMPERATURE = 298.15
@@ -56,6 +55,7 @@ class IdealGasLookup(Component):
         enthalpy: State | float | None = None,
         internal_energy: State | float | None = None,
         density: State | float | None = None,
+        flash_values: tuple[str, ...] | None = None,
         **property_states: State,
     ):
 
@@ -75,8 +75,6 @@ class IdealGasLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-        # Keep self.fluid exactly as the user provided it.
-        # Use these only for backend calculations.
         if not FluidRegistry.supports_both(self.fluid):
             raise ValueError(
                 f"{self.fluid!r} must be supported by both CoolProp and "
@@ -110,57 +108,117 @@ class IdealGasLookup(Component):
 
         if len(provided_names) == 0:
             raise ValueError(
-                "IdealGasLookup requires at least one thermodynamic input."
+                "IdealGasLookup requires at least one thermodynamic input "
+                "so the initial ideal-gas state can be defined."
             )
 
-        if "pressure" in provided_names:
-            if len(provided_names) < 2:
-                raise ValueError(
-                    "pressure cannot define an ideal-gas state by itself."
-                )
+        # ---------- choose actual flash values ----------
+        if flash_values is None:
+            if "pressure" in provided_names:
+                if len(provided_names) < 2:
+                    raise ValueError(
+                        "pressure cannot define an ideal-gas state by itself."
+                    )
 
-            self._flash_names = provided_names[:2]
+                self._flash_names = provided_names[:2]
 
-            if "pressure" not in self._flash_names:
-                raise ValueError(
-                    "If pressure is provided, it must be one of the first "
-                    "two thermodynamic inputs."
-                )
+                if "pressure" not in self._flash_names:
+                    raise ValueError(
+                        "If pressure is provided, it must be one of the first "
+                        "two thermodynamic inputs."
+                    )
 
-        elif "density" in provided_names:
-            if len(provided_names) < 2:
-                raise ValueError(
-                    "density cannot define an ideal-gas state by itself."
-                )
+            elif "density" in provided_names:
+                if len(provided_names) < 2:
+                    raise ValueError(
+                        "density cannot define an ideal-gas state by itself."
+                    )
 
-            self._flash_names = provided_names[:2]
+                self._flash_names = provided_names[:2]
 
-            if "density" not in self._flash_names:
-                raise ValueError(
-                    "If density is provided, it must be one of the first "
-                    "two thermodynamic inputs."
-                )
+                if "density" not in self._flash_names:
+                    raise ValueError(
+                        "If density is provided, it must be one of the first "
+                        "two thermodynamic inputs."
+                    )
+
+            else:
+                self._flash_names = [provided_names[0]]
 
         else:
-            self._flash_names = [provided_names[0]]
+            if not isinstance(flash_values, tuple) or len(flash_values) not in {1, 2}:
+                raise ValueError(
+                    "flash_values must be None, a tuple with one property name, "
+                    "or a tuple with two property names. Examples: "
+                    "('temperature',) or ('pressure', 'enthalpy')."
+                )
+
+            self._flash_names = list(flash_values)
+
+            invalid_flash_values = [
+                name for name in self._flash_names
+                if name not in self._THERMO_NAMES
+            ]
+
+            if invalid_flash_values:
+                raise ValueError(
+                    f"Invalid flash_values: {invalid_flash_values}. "
+                    f"Valid names are: {list(self._THERMO_NAMES)}."
+                )
 
         self._validate_flash_names()
 
+        # ---------- choose initial flash values ----------
+        if len(provided_names) == 1:
+            initial_flash_names = [provided_names[0]]
+        else:
+            initial_flash_names = provided_names[:2]
+
+        self._validate_initial_flash_names(initial_flash_names)
+
         self._IdealGas = IdealGas(
             self._pyromat_fluid,
-            **self._ideal_gas_constructor_kwargs(),
+            **{
+                flash_name: self._to_ideal_basis(
+                    flash_name,
+                    getattr(self, flash_name).value,
+                )
+                for flash_name in initial_flash_names
+            },
         )
 
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
-        for output_name in provided_names[len(self._flash_names):]:
-            state = getattr(self, output_name)
-            self._property_states[output_name] = state
-            self._external_property_names.add(output_name)
+        # ---------- initialize missing flash states ----------
+        for flash_name in self._flash_names:
+            initial_value = self._get_property(flash_name)
 
+            state = getattr(self, flash_name, None)
+
+            if hasattr(state, "is_assigned"):
+                if not state.is_assigned:
+                    state.value = initial_value
+            else:
+                setattr(self, flash_name, State(initial_value))
+
+        # ---------- provided non-flash thermo states become outputs ----------
         for prop_name in self._THERMO_NAMES:
-            if _input_map[prop_name] is None and hasattr(self, prop_name):
+            if prop_name in self._flash_names:
+                continue
+
+            if hasattr(self, prop_name):
+                self._property_states[prop_name] = getattr(self, prop_name)
+                self._external_property_names.add(prop_name)
+
+        # ---------- remove unprovided, non-flash placeholder thermo states ----------
+        for prop_name in self._THERMO_NAMES:
+            if (
+                prop_name not in self._flash_names
+                and prop_name not in self._external_property_names
+                and _input_map[prop_name] is None
+                and hasattr(self, prop_name)
+            ):
                 delattr(self, prop_name)
 
         for prop_name, state in property_states.items():
@@ -175,7 +233,7 @@ class IdealGasLookup(Component):
 
             if prop_name in self._flash_names:
                 raise ValueError(
-                    f"{prop_name!r} was provided as a flash input and "
+                    f"{prop_name!r} is already being used as a flash input and "
                     f"cannot also be used as an output property State."
                 )
 
@@ -217,6 +275,21 @@ class IdealGasLookup(Component):
             )
 
         return self._property_states[name]
+
+    def _validate_initial_flash_names(self, flash_names: list[str]) -> None:
+        if len(flash_names) == 1:
+            if flash_names[0] not in self._SINGLE_FLASH_NAMES:
+                raise ValueError(
+                    f"Unsupported initial IdealGas flash input: {flash_names[0]!r}."
+                )
+            return
+
+        key = frozenset(flash_names)
+
+        if key not in self._FLASH_PAIR_SETTERS:
+            raise ValueError(
+                f"Unsupported initial IdealGas flash pair: {sorted(flash_names)}."
+            )
 
     def _validate_flash_names(self) -> None:
         if len(self._flash_names) == 1:

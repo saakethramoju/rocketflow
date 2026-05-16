@@ -8,7 +8,6 @@ from Utilities import Fluid, FluidRegistry
 if TYPE_CHECKING:
     from System import Network
 
-
 class FluidLookup(Component):
 
     _THERMO_NAMES = (
@@ -44,6 +43,7 @@ class FluidLookup(Component):
         quality: State | float | None = None,
         density: State | float | None = None,
         internal_energy: State | float | None = None,
+        flash_values: tuple[str, str] | None = None,
         **property_states: State,
     ):
 
@@ -64,8 +64,6 @@ class FluidLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-        # Keep self.fluid exactly as the user provided it.
-        # Use this only for backend Fluid calculations.
         self._coolprop_fluid = FluidRegistry.coolprop_name(self.fluid)
 
         provided_names = [
@@ -76,10 +74,31 @@ class FluidLookup(Component):
 
         if len(provided_names) < 2:
             raise ValueError(
-                "FluidLookup requires at least two provided thermodynamic inputs."
+                "FluidLookup requires at least two provided thermodynamic inputs "
+                "so the initial fluid state can be defined."
             )
 
-        self._flash_names = provided_names[:2]
+        if flash_values is None:
+            self._flash_names = provided_names[:2]
+        else:
+            if not isinstance(flash_values, tuple) or len(flash_values) != 2:
+                raise ValueError(
+                    "flash_values must be None or a tuple of two property names, "
+                    "for example ('pressure', 'enthalpy')."
+                )
+
+            self._flash_names = list(flash_values)
+
+            invalid_flash_values = [
+                name for name in self._flash_names
+                if name not in self._THERMO_NAMES
+            ]
+
+            if invalid_flash_values:
+                raise ValueError(
+                    f"Invalid flash_values: {invalid_flash_values}. "
+                    f"Valid names are: {list(self._THERMO_NAMES)}."
+                )
 
         flash_key = frozenset(self._flash_names)
 
@@ -89,25 +108,57 @@ class FluidLookup(Component):
                 f"Supported pairs are: {Fluid.available_flash_pairs()}."
             )
 
-        self._property_states: dict[str, State] = {}
-        self._external_property_names: set[str] = set()
+        initial_flash_names = provided_names[:2]
+        initial_flash_key = frozenset(initial_flash_names)
 
-        for output_name in provided_names[2:]:
-            state = getattr(self, output_name)
-            self._property_states[output_name] = state
-            self._external_property_names.add(output_name)
+        if initial_flash_key not in self._FLASH_PAIR_SETTERS:
+            raise ValueError(
+                f"Unsupported initial Fluid flash pair: {sorted(initial_flash_names)}. "
+                f"Supported pairs are: {Fluid.available_flash_pairs()}."
+            )
 
-        for prop_name in self._THERMO_NAMES:
-            if _input_map[prop_name] is None and hasattr(self, prop_name):
-                delattr(self, prop_name)
+        initial_setter_name, initial_ordered_names = self._FLASH_PAIR_SETTERS[
+            initial_flash_key
+        ]
 
         self._Fluid = Fluid(
             self._coolprop_fluid,
             **{
-                flash_name: getattr(self, flash_name).value
-                for flash_name in self._flash_names
+                name: getattr(self, name).value
+                for name in initial_ordered_names
             },
         )
+
+        self._property_states: dict[str, State] = {}
+        self._external_property_names: set[str] = set()
+
+        for flash_name in self._flash_names:
+            initial_value = getattr(self._Fluid, flash_name)
+
+            state = getattr(self, flash_name, None)
+
+            if hasattr(state, "is_assigned"):
+                if not state.is_assigned:
+                    state.value = initial_value
+            else:
+                setattr(self, flash_name, State(initial_value))
+
+        for prop_name in self._THERMO_NAMES:
+            if prop_name in self._flash_names:
+                continue
+
+            if hasattr(self, prop_name):
+                self._property_states[prop_name] = getattr(self, prop_name)
+                self._external_property_names.add(prop_name)
+
+        for prop_name in self._THERMO_NAMES:
+            if (
+                prop_name not in self._flash_names
+                and prop_name not in self._external_property_names
+                and _input_map[prop_name] is None
+                and hasattr(self, prop_name)
+            ):
+                delattr(self, prop_name)
 
         for prop_name, state in property_states.items():
 
@@ -121,7 +172,7 @@ class FluidLookup(Component):
 
             if prop_name in self._flash_names:
                 raise ValueError(
-                    f"{prop_name!r} was provided as a flash input and "
+                    f"{prop_name!r} is already being used as a flash input and "
                     f"cannot also be used as an output property State."
                 )
 
@@ -199,7 +250,6 @@ class FluidLookup(Component):
             "coolprop_fluid",
             "_coolprop_fluid",
         }
-    
     
 
 class DensityfromPT(Component):

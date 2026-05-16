@@ -22,7 +22,8 @@ source_fluid = FluidLookup("Source Fluid", SimpleNetwork, fluid,
 manifold_fluid = FluidLookup("Manifold Fluid", SimpleNetwork, fluid,
                              pressure= 10 * PSIA_TO_PA,
                              temperature=300,
-                             density=manifold_density)
+                             density=manifold_density,
+                             flash_values=("enthalpy", "pressure"))
 # --- Component Definition ---
 
 Source = IsothermalPressureBoundary("Source", SimpleNetwork,
@@ -56,7 +57,7 @@ Manifold = SimpleVolume("Manifold", SimpleNetwork,
                         volume=0.01,
                         mass_flow_in=Line1.mass_flow,
                         enthalpy_in=source_fluid.enthalpy,
-                        enthalpy_out=manifold_fluid.enthalpy)
+                        enthalpy=manifold_fluid.enthalpy)
 '''
 Line2 = DischargeCoefficient("Line 2", SimpleNetwork,
                              upstream_pressure=manifold_fluid.pressure,
