@@ -31,14 +31,6 @@ class SteadyState:
             # add x-dependence so finite-difference Jacobian is nonzero
             penalty += 1e-3 * np.linalg.norm(x)
             return penalty
-        '''
-        except Exception as e:
-            raise RuntimeError(
-                "Residual evaluation failed during solve.\n"
-                f"x = {x}\n"
-                f"Original error: {e}"
-            ) from e
-        '''
         
 
     def static_evaluate(
