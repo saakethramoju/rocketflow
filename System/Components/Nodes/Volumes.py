@@ -64,6 +64,7 @@ class SimpleVolume(Component):
                  volume: float,
                  temperature: State | None = None,
                  density: State | None = None,
+                 internal_energy: State | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out: State | None = None,
                  enthalpy_in: State | None = None,):
@@ -99,4 +100,33 @@ class SimpleVolume(Component):
             energy_scale,
         ]
     '''
+
+
+class SimpleFlowSplitter(Component):
+
+    def __init__(self,
+                 name:str,
+                 network: Network,
+                 pressure: State,
+                 enthalpy: State,
+                 volume: float,
+                 temperature: State | None = None,
+                 density: State | None = None,
+                 internal_energy: State | None = None,
+                 mass_flow_in: State | None = None,
+                 mass_flow_out1: State | None = None,
+                 mass_flow_out2: State | None = None,
+                 enthalpy_in: State | None = None,):
+        
+        self.setup()
+    
+    @property
+    def iteration_variables(self) -> list[State]:
+        return [self.pressure, self.enthalpy]
+
+    @property
+    def residuals(self) -> list[float]:
+        energy_out = (self.mass_flow_out1.value * self.enthalpy.value) + (self.mass_flow_out2.value * self.enthalpy.value)
+        return [self.mass_flow_in.value - (self.mass_flow_out1.value + self.mass_flow_out2.value),
+                (self.mass_flow_in.value * self.enthalpy_in.value) - energy_out]
     

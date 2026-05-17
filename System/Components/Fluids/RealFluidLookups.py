@@ -78,6 +78,7 @@ class FluidLookup(Component):
                 "so the initial fluid state can be defined."
             )
 
+        # ---------- actual flash values used during evaluation ----------
         if flash_values is None:
             self._flash_names = provided_names[:2]
         else:
@@ -108,6 +109,7 @@ class FluidLookup(Component):
                 f"Supported pairs are: {Fluid.available_flash_pairs()}."
             )
 
+        # ---------- initial state used to initialize missing flash values ----------
         initial_flash_names = provided_names[:2]
         initial_flash_key = frozenset(initial_flash_names)
 
@@ -132,6 +134,7 @@ class FluidLookup(Component):
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
+        # ---------- flash properties are owned assignable States ----------
         for flash_name in self._flash_names:
             initial_value = getattr(self._Fluid, flash_name)
 
@@ -143,22 +146,23 @@ class FluidLookup(Component):
             else:
                 setattr(self, flash_name, State(initial_value))
 
+        # ---------- delete unprovided non-flash placeholders ----------
+        # This lets __getattr__ dynamically create derived property States.
         for prop_name in self._THERMO_NAMES:
             if prop_name in self._flash_names:
                 continue
 
-            if hasattr(self, prop_name):
+            if _input_map[prop_name] is None and prop_name in self.__dict__:
+                delattr(self, prop_name)
+
+        # ---------- provided non-flash thermo states become output States ----------
+        for prop_name in self._THERMO_NAMES:
+            if prop_name in self._flash_names:
+                continue
+
+            if prop_name in self.__dict__:
                 self._property_states[prop_name] = getattr(self, prop_name)
                 self._external_property_names.add(prop_name)
-
-        for prop_name in self._THERMO_NAMES:
-            if (
-                prop_name not in self._flash_names
-                and prop_name not in self._external_property_names
-                and _input_map[prop_name] is None
-                and hasattr(self, prop_name)
-            ):
-                delattr(self, prop_name)
 
         for prop_name, state in property_states.items():
 
@@ -250,7 +254,6 @@ class FluidLookup(Component):
             "coolprop_fluid",
             "_coolprop_fluid",
         }
-    
 
 class DensityfromPT(Component):
 

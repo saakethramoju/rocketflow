@@ -20,9 +20,9 @@ class RocketCEAChokedNozzle(Component):
                  throat_area: float,
                  expansion_ratio: float,
                  ambient_pressure: State,
+                 mixture_ratio: State,
                  characterstic_velocity_efficiency: float,
                  thrust_coefficient_efficiency: float,
-                 mixture_ratio: State | None = None,
                  thrust: State | None = None,
                  mass_flow: State | None = None):
         self.setup()

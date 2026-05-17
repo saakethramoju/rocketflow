@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from System import Network
 
 
-class RocketCEACombustionChamber(Component):
+class MainCombustionChamber(Component):
 
     def __init__(self, 
                  name: str, 

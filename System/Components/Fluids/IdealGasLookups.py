@@ -8,6 +8,7 @@ from Utilities import Fluid, IdealGas, FluidRegistry
 if TYPE_CHECKING:
     from System import Network
 
+
 class IdealGasLookup(Component):
 
     _REFERENCE_TEMPERATURE = 298.15
@@ -112,7 +113,6 @@ class IdealGasLookup(Component):
                 "so the initial ideal-gas state can be defined."
             )
 
-        # ---------- choose actual flash values ----------
         if flash_values is None:
             if "pressure" in provided_names:
                 if len(provided_names) < 2:
@@ -168,7 +168,6 @@ class IdealGasLookup(Component):
 
         self._validate_flash_names()
 
-        # ---------- choose initial flash values ----------
         if len(provided_names) == 1:
             initial_flash_names = [provided_names[0]]
         else:
@@ -190,7 +189,7 @@ class IdealGasLookup(Component):
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
-        # ---------- initialize missing flash states ----------
+        # ---------- flash properties are owned assignable States ----------
         for flash_name in self._flash_names:
             initial_value = self._get_property(flash_name)
 
@@ -202,24 +201,23 @@ class IdealGasLookup(Component):
             else:
                 setattr(self, flash_name, State(initial_value))
 
-        # ---------- provided non-flash thermo states become outputs ----------
+        # ---------- delete unprovided non-flash placeholders ----------
+        # This lets __getattr__ dynamically create derived property States.
         for prop_name in self._THERMO_NAMES:
             if prop_name in self._flash_names:
                 continue
 
-            if hasattr(self, prop_name):
+            if _input_map[prop_name] is None and prop_name in self.__dict__:
+                delattr(self, prop_name)
+
+        # ---------- provided non-flash thermo states become output States ----------
+        for prop_name in self._THERMO_NAMES:
+            if prop_name in self._flash_names:
+                continue
+
+            if prop_name in self.__dict__:
                 self._property_states[prop_name] = getattr(self, prop_name)
                 self._external_property_names.add(prop_name)
-
-        # ---------- remove unprovided, non-flash placeholder thermo states ----------
-        for prop_name in self._THERMO_NAMES:
-            if (
-                prop_name not in self._flash_names
-                and prop_name not in self._external_property_names
-                and _input_map[prop_name] is None
-                and hasattr(self, prop_name)
-            ):
-                delattr(self, prop_name)
 
         for prop_name, state in property_states.items():
 
@@ -305,15 +303,6 @@ class IdealGasLookup(Component):
             raise ValueError(
                 f"Unsupported IdealGas flash pair: {sorted(self._flash_names)}."
             )
-
-    def _ideal_gas_constructor_kwargs(self) -> dict:
-        return {
-            flash_name: self._to_ideal_basis(
-                flash_name,
-                getattr(self, flash_name).value,
-            )
-            for flash_name in self._flash_names
-        }
 
     def _set_ideal_gas_from_flash(self) -> None:
         if len(self._flash_names) == 1:

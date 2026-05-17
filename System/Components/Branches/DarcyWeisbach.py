@@ -20,10 +20,10 @@ class GenericDarcyWeisbach(Component):
                  length: float,
                  cross_sectional_area: float,
                  hydraulic_diameter: float,
+                 density: State,
+                 dynamic_viscosity: State,
                  poiseuille_number: float = 16.0,
                  roughness: float | None = 0.0,
-                 density: State | None = None,
-                 dynamic_viscosity: State | None = None,
                  Reynolds_number_threshold: float = 2300,
                  mass_flow: State | None = None,
                  friction_factor: State | None = None,
@@ -85,9 +85,9 @@ class CircularPipeDarcyWeisbach(Component):
                  downstream_pressure: State,
                  length: float,
                  inner_diameter: float,
+                 density: State,
+                 dynamic_viscosity: State,
                  roughness: float | None = 0.0,
-                 density: State | None = None,
-                 dynamic_viscosity: State | None = None,
                  Reynolds_number_threshold: float = 2300,
                  mass_flow: State | None = None,
                  friction_factor: State | None = None,
@@ -151,9 +151,9 @@ class RectangularDuctDarcyWeisbach(Component):
                  length: float,
                  height: float,
                  width: float,
+                 density: State,
+                 dynamic_viscosity: State,
                  roughness: float | None = 0.0,
-                 density: State | None = None,
-                 dynamic_viscosity: State | None = None,
                  Reynolds_number_threshold: float = 2300,
                  mass_flow: State | None = None,
                  friction_factor: State | None = None,
@@ -226,9 +226,9 @@ class EllipticalDuctDarcyWeisbach(Component):
                  length: float,
                  semi_major_axis: float,
                  semi_minor_axis: float,
+                 density: State,
+                 dynamic_viscosity: State,
                  roughness: float | None = 0.0,
-                 density: State | None = None,
-                 dynamic_viscosity: State | None = None,
                  Reynolds_number_threshold: float = 2300,
                  mass_flow: State | None = None,
                  friction_factor: State | None = None,
@@ -340,6 +340,15 @@ def darcy_weisbach_mass_flow(
     flow_regime
         "laminar", "turbulent", "zero flow", or "<fixed friction factor>".
     """
+
+    if length <= 0.0:
+        raise ValueError(f"Darcy-Weisbach length must be positive. Got length={length}.")
+        
+    if hydraulic_diameter <= 0.0:
+        raise ValueError("hydraulic_diameter must be positive.")
+
+    if area <= 0.0:
+        raise ValueError("area must be positive.")
 
     # local aliases for readability
     dP = pressure_drop

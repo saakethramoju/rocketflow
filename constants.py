@@ -3,9 +3,10 @@ g = 9.80665 # gravitational acceleration (m/s^2)
 R = 8.31446261815324 # universal gas constant (J/mol-K)
 
 PSIA_TO_PA = 6894.757293168
+PA_TO_PSIA = 1 / PSIA_TO_PA
 
-N_TO_LBF = 4.4482216152605
-LBF_TO_N  = 0.2248089431
+N_TO_LBF = 1 / 4.4482216152605
+LBF_TO_N  = 4.4482216152605
 
 M3_TO_L = 0.001
 

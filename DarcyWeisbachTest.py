@@ -88,6 +88,6 @@ source_pressure_balance = Balance("Balance source pressure until mdot = 0.6",
                           #bounds=(0, 3e5),
                           #keep_feasible=True)
 
-print(SteadyState(SimpleNetwork).solve(return_type='dataframe', filename='solution.xlsx', verbose=True, static=False))
+print(SteadyState(SimpleNetwork).solve(return_type='dataframe', verbose=True, static=False))
 
 #Fluid.show_available_fluids()
