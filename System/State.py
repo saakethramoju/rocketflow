@@ -372,6 +372,29 @@ class State:
 
     def trunc(self):
         return State(expr=lambda: math.trunc(self.value))
+        
+    @staticmethod
+    def maximum(a, b):
+        a = State._coerce(a)
+        b = State._coerce(b)
+        return State(expr=lambda: max(a.value, b.value))
+
+    @staticmethod
+    def minimum(a, b):
+        a = State._coerce(a)
+        b = State._coerce(b)
+        return State(expr=lambda: min(a.value, b.value))
+
+    def clip(self, lower=None, upper=None):
+        result = self
+
+        if lower is not None:
+            result = State.maximum(result, lower)
+
+        if upper is not None:
+            result = State.minimum(result, upper)
+
+        return result
 
     # ---------- misc ----------
     def modf(self):

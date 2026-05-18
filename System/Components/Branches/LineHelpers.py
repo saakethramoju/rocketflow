@@ -25,9 +25,6 @@ class GravityPressureChange(Component):
         """
         self.setup()
 
-        if downstream_pressure is None:
-            self.downstream_pressure = State()
-
     def evaluate_states(self) -> None:
         self.downstream_pressure.value = (
             self.upstream_pressure.value
