@@ -36,26 +36,26 @@ InletLine = DischargeCoefficient("Inlet Line", PumpNetwork, upstream_pressure=So
 
 Inlet = IsothermalIncompressibleVolume("Suction Inlet", PumpNetwork, pressure=SuctionFluid.pressure,
                                        temperature=SuctionFluid.temperature, mass_flow_in=InletLine.mass_flow, volume=0.2*IN3_TO_M3)
-'''
+
 FuelPumpMap = SimpleEulerCentrifugalPump(
     name="Fuel Pump Map Generator",
     network=PumpNetwork,
 
     rotor_speed=20000,
-    volumetric_flow=0.0075,
+    volumetric_flow=0.0018,   # use the same State as the real pump
     density=SuctionFluid.density,
 
-    impeller_inlet_tip_radius=0.025,
-    impeller_outlet_tip_radius=0.040,
+    impeller_inlet_tip_radius=0.010,
+    impeller_outlet_tip_radius=0.020,
 
-    inlet_annular_flow_area=0.0025,
-    outlet_annular_flow_area=0.0018,
+    inlet_annular_flow_area=3.5e-4,
+    outlet_annular_flow_area=3.0e-4,
 
-    inlet_blade_angle=18.0,
+    inlet_blade_angle=20.0,
     outlet_blade_angle=35.0,
     angle_units="degrees",
 
-    slip_factor=0.85,
+    slip_factor=0.70,
 
     hydraulic_efficiency=0.65,
     mechanical_efficiency=0.90,
@@ -65,55 +65,11 @@ FuelPumpMap = SimpleEulerCentrifugalPump(
 FuelEPump = ConstantDensityPump(
     "Fuel E-Pump",
     PumpNetwork,
-    rotor_speed=,
+    rotor_speed=FuelPumpMap.rotor_speed,
     head_rise=FuelPumpMap.head_rise,
     volumetric_flow=FuelPumpMap.volumetric_flow,
     density=SuctionFluid.density,
     torque=FuelPumpMap.torque,
-    upstream_total_pressure=Inlet.pressure,
-    discharge_total_pressure=DischargeFluid.pressure,
-    mass_flow=Inlet.mass_flow_out,
-)
-'''
-
-Q_design = 0.0018   # m^3/s
-H_design = 47.0     # m, not 85
-N_design = 20000.0  # rpm
-eta_design = 0.65
-
-
-def pump_head(Q, N):
-    speed_ratio = N / N_design
-    phi = Q / (Q_design * speed_ratio)
-
-    H_shutoff = 1.35 * H_design
-    H = H_shutoff * speed_ratio**2 * (1.0 - 0.259 * phi**2)
-
-    return H.clip(lower=0.0)
-
-def pump_torque(Q, N, rho):
-    H = pump_head(Q, N)
-    omega = np.pi / 30.0 * N
-
-    hydraulic_power = rho * 9.80665 * Q * H
-    shaft_power = hydraulic_power / eta_design
-
-    return shaft_power / omega
-
-
-shaft_speed = State(N_design)
-#flowrate = State(Q_design, bounds=(0.0, 0.003), keep_feasible=True)
-flowrate = State(Q_design)
-
-
-FuelEPump = ConstantDensityPump(
-    "Fuel E-Pump",
-    PumpNetwork,
-    rotor_speed=shaft_speed,
-    head_rise=pump_head(flowrate, shaft_speed),
-    volumetric_flow=flowrate,
-    density=SuctionFluid.density,
-    torque=pump_torque(flowrate, shaft_speed, SuctionFluid.density),
     upstream_total_pressure=Inlet.pressure,
     discharge_total_pressure=DischargeFluid.pressure,
     mass_flow=Inlet.mass_flow_out,
