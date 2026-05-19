@@ -9,6 +9,28 @@ from System import Component, State
 if TYPE_CHECKING:
     from System import Network
 
+
+def effective_area_from_mass_flow(
+    mass_flow: float,
+    pressure_drop: float,
+    density: float,
+) -> float:
+    """
+    Computes an equivalent CdA/effective area from:
+
+        mdot = CdA * sqrt(2 * rho * abs(dP))
+    """
+    if abs(pressure_drop) < 1e-12:
+        return 0.0
+
+    if density <= 0.0:
+        raise ValueError("density must be positive.")
+
+    return abs(mass_flow) / math.sqrt(2.0 * density * abs(pressure_drop))
+
+
+
+
 class GravityPressureChange(Component):
 
     def __init__(
@@ -20,9 +42,18 @@ class GravityPressureChange(Component):
         elevation_change: State | float,
         gravitional_acceleration: State | float = 9.80665,
         downstream_pressure: State | None = None,
+        mass_flow: State | None = None,
+        effective_area: State | None = None,
     ):
         """
-        Elevation change is positive upwards
+        Computes pressure change from elevation.
+
+        elevation_change is positive upward.
+
+        If mass_flow is assigned, this also computes an equivalent
+        effective area using:
+
+            mdot = CdA * sqrt(2 * rho * abs(dP))
         """
         self.setup()
 
@@ -33,6 +64,14 @@ class GravityPressureChange(Component):
             * self.gravitional_acceleration.value
             * self.elevation_change.value
         )
+
+        if self.mass_flow.is_assigned:
+            dP = self.upstream_pressure.value - self.downstream_pressure.value
+            self.effective_area.value = effective_area_from_mass_flow(
+                self.mass_flow.value,
+                dP,
+                self.density.value,
+            )
 
 
 
@@ -55,7 +94,8 @@ class GenericDarcyWeisbach(Component):
                  mass_flow: State | None = None,
                  friction_factor: State | None = None,
                  flow_regime: str | None = None,
-                 Reynolds_number: float | None = None):
+                 Reynolds_number: float | None = None,
+                 effective_area: State | None = None):
 
         self._friction_factor_provided = friction_factor is not None
         self.setup()
@@ -71,17 +111,8 @@ class GenericDarcyWeisbach(Component):
         Dh = self.hydraulic_diameter.value
         Po = self.poiseuille_number.value
 
-        friction_factor = (
-            self.friction_factor.value
-            if self._friction_factor_provided
-            else None
-        )
-
-        initial_mass_flow = (
-            self.mass_flow.value
-            if self.mass_flow.is_assigned
-            else None
-        )
+        friction_factor = self.friction_factor.value if self._friction_factor_provided else None
+        initial_mass_flow = self.mass_flow.value if self.mass_flow.is_assigned else None
 
         mdot, f, Re, regime = darcy_weisbach_mass_flow(
             pressure_drop=dP,
@@ -100,7 +131,10 @@ class GenericDarcyWeisbach(Component):
         self.mass_flow.value = mdot
         self.friction_factor.value = f
         self.Reynolds_number.value = Re
+        self.effective_area.value = effective_area_from_mass_flow(mdot, dP, rho)
         self.flow_regime = regime
+
+
 
 
 class CircularPipeDarcyWeisbach(Component):
@@ -119,13 +153,13 @@ class CircularPipeDarcyWeisbach(Component):
                  mass_flow: State | None = None,
                  friction_factor: State | None = None,
                  flow_regime: str | None = None,
-                 Reynolds_number: float | None = None):
+                 Reynolds_number: float | None = None,
+                 effective_area: State | None = None):
         
         self._friction_factor_provided = friction_factor is not None
         self.setup()
 
     def evaluate_states(self):
-
         rho = self.density.value
         Dh = self.inner_diameter.value
         L = self.length.value
@@ -135,17 +169,8 @@ class CircularPipeDarcyWeisbach(Component):
 
         A = math.pi * Dh**2 / 4.0
 
-        friction_factor = (
-            self.friction_factor.value
-            if self._friction_factor_provided
-            else None
-        )
-
-        initial_mass_flow = (
-            self.mass_flow.value
-            if self.mass_flow.is_assigned
-            else None
-        )
+        friction_factor = self.friction_factor.value if self._friction_factor_provided else None
+        initial_mass_flow = self.mass_flow.value if self.mass_flow.is_assigned else None
 
         mdot, f, Re, regime = darcy_weisbach_mass_flow(
             pressure_drop=dP,
@@ -164,7 +189,9 @@ class CircularPipeDarcyWeisbach(Component):
         self.mass_flow.value = mdot
         self.friction_factor.value = f
         self.Reynolds_number.value = Re
+        self.effective_area.value = effective_area_from_mass_flow(mdot, dP, rho)
         self.flow_regime = regime
+
 
 
 
@@ -185,7 +212,8 @@ class RectangularDuctDarcyWeisbach(Component):
                  mass_flow: State | None = None,
                  friction_factor: State | None = None,
                  flow_regime: str | None = None,
-                 Reynolds_number: float | None = None):
+                 Reynolds_number: float | None = None,
+                 effective_area: State | None = None):
 
         self._friction_factor_provided = friction_factor is not None
         self.setup()
@@ -203,24 +231,14 @@ class RectangularDuctDarcyWeisbach(Component):
         perimeter = 2.0 * (height + width)
         Dh = 4.0 * A / perimeter
 
-        # rectangular duct convention: x = smaller/larger side
         a = max(width, height) / 2.0
         b = min(width, height) / 2.0
         x = b / a
 
         Po = 23.9201 - 29.436 * x + 30.3872 * x**2 - 10.7128 * x**3
 
-        friction_factor = (
-            self.friction_factor.value
-            if self._friction_factor_provided
-            else None
-        )
-
-        initial_mass_flow = (
-            self.mass_flow.value
-            if self.mass_flow.is_assigned
-            else None
-        )
+        friction_factor = self.friction_factor.value if self._friction_factor_provided else None
+        initial_mass_flow = self.mass_flow.value if self.mass_flow.is_assigned else None
 
         mdot, f, Re, regime = darcy_weisbach_mass_flow(
             pressure_drop=dP,
@@ -239,7 +257,9 @@ class RectangularDuctDarcyWeisbach(Component):
         self.mass_flow.value = mdot
         self.friction_factor.value = f
         self.Reynolds_number.value = Re
+        self.effective_area.value = effective_area_from_mass_flow(mdot, dP, rho)
         self.flow_regime = regime
+
 
 
 
@@ -260,7 +280,8 @@ class EllipticalDuctDarcyWeisbach(Component):
                  mass_flow: State | None = None,
                  friction_factor: State | None = None,
                  flow_regime: str | None = None,
-                 Reynolds_number: float | None = None):
+                 Reynolds_number: float | None = None,
+                 effective_area: State | None = None):
 
         self._friction_factor_provided = friction_factor is not None
         self.setup()
@@ -274,21 +295,18 @@ class EllipticalDuctDarcyWeisbach(Component):
 
         a = self.semi_major_axis.value
         b = self.semi_minor_axis.value
-
-        # enforce convention: a is larger semi-axis, b is smaller semi-axis
         a, b = max(a, b), min(a, b)
 
         A = math.pi * a * b
 
-        # Ramanujan ellipse perimeter approximation
         perimeter = math.pi * (
             3.0 * (a + b)
             - math.sqrt((3.0 * a + b) * (a + 3.0 * b))
         )
 
         Dh = 4.0 * A / perimeter
-
         x = b / a
+
         Po = (
             19.7669
             - 4.53458 * x
@@ -297,17 +315,8 @@ class EllipticalDuctDarcyWeisbach(Component):
             - 10.0874 * x**4
         )
 
-        friction_factor = (
-            self.friction_factor.value
-            if self._friction_factor_provided
-            else None
-        )
-
-        initial_mass_flow = (
-            self.mass_flow.value
-            if self.mass_flow.is_assigned
-            else None
-        )
+        friction_factor = self.friction_factor.value if self._friction_factor_provided else None
+        initial_mass_flow = self.mass_flow.value if self.mass_flow.is_assigned else None
 
         mdot, f, Re, regime = darcy_weisbach_mass_flow(
             pressure_drop=dP,
@@ -326,9 +335,8 @@ class EllipticalDuctDarcyWeisbach(Component):
         self.mass_flow.value = mdot
         self.friction_factor.value = f
         self.Reynolds_number.value = Re
+        self.effective_area.value = effective_area_from_mass_flow(mdot, dP, rho)
         self.flow_regime = regime
-
-
 
 
 
@@ -349,24 +357,6 @@ def darcy_weisbach_mass_flow(
     rel_tol: float = 1e-10,
     abs_tol: float = 1e-12,
 ) -> tuple[float, float, float, str]:
-    """
-    Compute Darcy-Weisbach mass flow for circular or non-circular ducts.
-
-    Returns
-    -------
-    mass_flow
-        Signed mass flow rate.
-
-    friction_factor
-        Darcy friction factor.
-
-    Reynolds_number
-        Final Reynolds number based on the effective diameter used for
-        friction factor evaluation.
-
-    flow_regime
-        "laminar", "turbulent", "zero flow", or "<fixed friction factor>".
-    """
 
     if length <= 0.0:
         raise ValueError(f"Darcy-Weisbach length must be positive. Got length={length}.")
@@ -377,7 +367,6 @@ def darcy_weisbach_mass_flow(
     if area <= 0.0:
         raise ValueError("area must be positive.")
 
-    # local aliases for readability
     dP = pressure_drop
     rho = density
     mu = dynamic_viscosity
@@ -388,25 +377,15 @@ def darcy_weisbach_mass_flow(
     Po = poiseuille_number
     Re_thresh = Reynolds_number_threshold
 
-    # no pressure drop -> no flow
     if abs(dP) < 1e-12:
         return 0.0, 0.0, 0.0, "zero flow"
 
     def friction_factor_from_Re(Re: float) -> tuple[float, str]:
-
-        # prevent divide-by-zero
         Re = max(Re, 1e-12)
 
-        # laminar friction factor using Poiseuille number
-        #
-        # circular pipe:
-        #     Po = 16
-        #     f = 64 / Re
         if Re <= Re_thresh:
             return 4.0 * Po / Re, "laminar"
 
-        # effective diameter/Reynolds number method
-        # for noncircular turbulent ducts
         Deff = 16.0 * Dh / Po
         Re_eff = Re * Deff / Dh
 
@@ -414,85 +393,39 @@ def darcy_weisbach_mass_flow(
         b = eps / (3.7 * Deff)
         c = math.log(10.0) / 2.0
 
-        # equivalent to Lambert-W Colebrook solution,
-        # but avoids exp overflow
         z = math.log(c / a) + (c * b) / a
         x = (1.0 / c) * wrightomega(z).real - (b / a)
 
         return 1.0 / x**2, "turbulent"
 
-    # directly use user-specified friction factor
     if friction_factor is not None:
-
         f = friction_factor
-
         Kf = 8.0 * f * L / (rho * math.pi**2 * Dh**5)
-
-        mdot = math.copysign(
-            math.sqrt(abs(dP) / Kf),
-            dP,
-        )
-
+        mdot = math.copysign(math.sqrt(abs(dP) / Kf), dP)
         Re = max(abs(mdot) * Dh / (mu * A), 1e-12)
-
-        if Re <= Re_thresh:
-            regime = "laminar"
-        else:
-            regime = "turbulent"
-
+        regime = "laminar" if Re <= Re_thresh else "turbulent"
         return mdot, f, Re, regime
 
-    # use previous converged mdot if available;
-    # otherwise use inviscid/orifice-like initial guess
     if initial_mass_flow is not None:
         mdot = initial_mass_flow
     else:
-        mdot = math.copysign(
-            A * math.sqrt(2.0 * rho * abs(dP)),
-            dP,
-        )
+        mdot = math.copysign(A * math.sqrt(2.0 * rho * abs(dP)), dP)
 
-    # fixed-point iteration:
-    #
-    #     mdot -> Re -> f -> mdot
-    #
-    # needed because friction factor depends on Reynolds number,
-    # which itself depends on mass flow rate
     for _ in range(max_iter):
-        
         Re = max(abs(mdot) * Dh / (mu * A), 1e-12)
-
         f, regime = friction_factor_from_Re(Re)
-
-        # Darcy-Weisbach resistance coefficient
         Kf = 8.0 * f * L / (rho * math.pi**2 * Dh**5)
+        mdot_new = math.copysign(math.sqrt(abs(dP) / Kf), dP)
 
-        # updated mass flow from pressure drop
-        mdot_new = math.copysign(
-            math.sqrt(abs(dP) / Kf),
-            dP,
-        )
-
-        # combined relative + absolute convergence check
-        if abs(mdot_new - mdot) <= max(
-            abs_tol,
-            rel_tol * max(abs(mdot_new), 1.0),
-        ):
+        if abs(mdot_new - mdot) <= max(abs_tol, rel_tol * max(abs(mdot_new), 1.0)):
             mdot = mdot_new
             break
 
         mdot = mdot_new
 
-    # recompute final Re/f so returned values are self-consistent
     Re = max(abs(mdot) * Dh / (mu * A), 1e-12)
-
     f, regime = friction_factor_from_Re(Re)
-
     Kf = 8.0 * f * L / (rho * math.pi**2 * Dh**5)
-
-    mdot = math.copysign(
-        math.sqrt(abs(dP) / Kf),
-        dP,
-    )
+    mdot = math.copysign(math.sqrt(abs(dP) / Kf), dP)
 
     return mdot, f, Re, regime

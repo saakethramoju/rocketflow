@@ -240,6 +240,7 @@ FuelGravitydP = GravityPressureChange(
     upstream_pressure=FuelTank.pressure,
     density=FuelTank.liquid_density,
     elevation_change=-0.5,
+    mass_flow=FuelTank.mass_flow_out
 )
 
 OxGravitydP = GravityPressureChange(
@@ -248,6 +249,7 @@ OxGravitydP = GravityPressureChange(
     upstream_pressure=OxTank.pressure,
     density=OxTank.liquid_density,
     elevation_change=-0.5,
+    mass_flow=OxTank.mass_flow_out
 )
 
 FuelRunline = GenericDarcyWeisbach(
