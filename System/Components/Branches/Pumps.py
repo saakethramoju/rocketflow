@@ -9,9 +9,6 @@ if TYPE_CHECKING:
     from System import Network
 
 
-class PumpMap(Component): pass
-
-
 class ConstantDensityPump(Component):
 
     def __init__(self,

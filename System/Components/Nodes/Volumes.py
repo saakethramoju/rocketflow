@@ -17,6 +17,8 @@ class SimpleIncompressibleVolume(Component):
                  pressure: State ,
                  volume: float,
                  density: State | None = None,
+                 temperature: State | None = None,
+                 enthalpy: State | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out: State | None = None):
 
@@ -28,7 +30,7 @@ class SimpleIncompressibleVolume(Component):
 
     @property
     def residuals(self) -> list[float]:
-        return [self.mdot_in.value - self.mdot_out.value]
+        return [self.mass_flow_in.value - self.mass_flow_out.value]
 
 
 class IsothermalIncompressibleVolume(Component):
@@ -40,6 +42,7 @@ class IsothermalIncompressibleVolume(Component):
                  temperature: State,
                  volume: float,
                  density: State | None = None,
+                 enthalpy: State | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out: State | None = None):
         
