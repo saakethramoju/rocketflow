@@ -266,3 +266,17 @@ class TurboDesignCoefficients(Component):
         self.flow_coefficient.value = flow_coefficient
         self.head_coefficient.value = head_coefficient
         self.torque_coefficient.value = torque_coefficient
+
+
+    
+class Rotor(Component):
+
+    def __init__(self,
+                 name: str,
+                 network: Network,
+                 rotor_speed: State,
+                 net_torque: State | float,
+                 polar_moment_of_inertia: float):
+        self.setup()
+
+    
