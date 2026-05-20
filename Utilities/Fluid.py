@@ -895,6 +895,26 @@ class Fluid:
 
         self.pressure_quality = (self.pressure, Q)
 
+
+    @property
+    def saturation_pressure(self) -> float:
+        """
+        Saturation pressure in Pa for current temperature,
+        only if temperature <= critical temperature.
+        """
+        Tc = self.critical_temperature
+
+        if Tc is not None and self.temperature > Tc:
+            return None
+
+        try:
+            tmp = self._build_state()
+            tmp.update(CP.QT_INPUTS, 1.0, self.temperature)
+            return float(tmp.p())
+
+        except Exception:
+            return None
+
     @property
     def saturation_temperature(self) -> float:
         """Saturation temperature in K for current pressure, only if pressure <= Pc."""
