@@ -260,11 +260,21 @@ FuelRunline = GenericDarcyWeisbach(
     length=0.5,
     cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
     hydraulic_diameter=0.5 * IN_TO_M,
-    roughness=1.5e-6,
     density=FuelTank.liquid_density,
-    dynamic_viscosity=FuelTankFluid.dynamic_viscosity,
     mass_flow=FuelTank.mass_flow_out,
 )
+
+FuelRunlineFriction = Colebrook(
+    "Fuel Main Line Friction",
+    PumpNetwork,
+    mass_flow=FuelRunline.mass_flow,
+    hydraulic_diameter=FuelRunline.hydraulic_diameter,
+    dynamic_viscosity=FuelTankFluid.dynamic_viscosity,
+    cross_sectional_area=FuelRunline.cross_sectional_area,
+    roughness=1.5e-6,
+    friction_factor=FuelRunline.friction_factor,
+)
+
 
 OxRunline = GenericDarcyWeisbach(
     "Ox Main Line",
@@ -274,11 +284,21 @@ OxRunline = GenericDarcyWeisbach(
     length=0.5,
     cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
     hydraulic_diameter=0.5 * IN_TO_M,
-    roughness=1.5e-6,
     density=OxTank.liquid_density,
-    dynamic_viscosity=OxTankFluid.dynamic_viscosity,
     mass_flow=OxTank.mass_flow_out,
 )
+
+OxRunlineFriction = Colebrook(
+    "Ox Main Line Friction",
+    PumpNetwork,
+    mass_flow=OxRunline.mass_flow,
+    hydraulic_diameter=OxRunline.hydraulic_diameter,
+    dynamic_viscosity=OxTankFluid.dynamic_viscosity,
+    cross_sectional_area=OxRunline.cross_sectional_area,
+    roughness=1.5e-6,
+    friction_factor=OxRunline.friction_factor,
+)
+
 
 FuelPumpInlet = IsothermalIncompressibleVolume(
     "Fuel Suction Inlet",
@@ -415,7 +435,6 @@ OxInjectorInletLine = DischargeCoefficient(
 )
 '''
 
-
 FuelInjectorInletLine = GenericDarcyWeisbach(
     "Fuel Injector Inlet",
     PumpNetwork,
@@ -424,11 +443,21 @@ FuelInjectorInletLine = GenericDarcyWeisbach(
     length=0.25,
     cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
     hydraulic_diameter=0.5 * IN_TO_M,
-    roughness=1.5e-6,
     density=FuelPumpOutlet.density,
-    dynamic_viscosity=FuelPumpDischargeFluid.dynamic_viscosity,
     mass_flow=FuelPumpOutlet.mass_flow_out,
 )
+
+FuelInjectorInletFriction = Colebrook(
+    "Fuel Injector Inlet Friction",
+    PumpNetwork,
+    mass_flow=FuelInjectorInletLine.mass_flow,
+    hydraulic_diameter=FuelInjectorInletLine.hydraulic_diameter,
+    dynamic_viscosity=FuelPumpDischargeFluid.dynamic_viscosity,
+    cross_sectional_area=FuelInjectorInletLine.cross_sectional_area,
+    roughness=1.5e-6,
+    friction_factor=FuelInjectorInletLine.friction_factor,
+)
+
 
 OxInjectorInletLine = GenericDarcyWeisbach(
     "Ox Injector Inlet",
@@ -438,10 +467,19 @@ OxInjectorInletLine = GenericDarcyWeisbach(
     length=0.25,
     cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
     hydraulic_diameter=0.5 * IN_TO_M,
-    roughness=1.5e-6,
     density=OxPumpOutlet.density,
-    dynamic_viscosity=OxPumpDischargeFluid.dynamic_viscosity,
     mass_flow=OxPumpOutlet.mass_flow_out,
+)
+
+OxInjectorInletFriction = Colebrook(
+    "Ox Injector Inlet Friction",
+    PumpNetwork,
+    mass_flow=OxInjectorInletLine.mass_flow,
+    hydraulic_diameter=OxInjectorInletLine.hydraulic_diameter,
+    dynamic_viscosity=OxPumpDischargeFluid.dynamic_viscosity,
+    cross_sectional_area=OxInjectorInletLine.cross_sectional_area,
+    roughness=1.5e-6,
+    friction_factor=OxInjectorInletLine.friction_factor,
 )
 
 

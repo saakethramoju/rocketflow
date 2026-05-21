@@ -51,6 +51,9 @@ class TestDarcy(Component):
         return [self.mass_flow.value - self._predicted_mass_flow]
 
 
+
+
+
 class Churchill(Component):
 
     def __init__(
@@ -68,11 +71,14 @@ class Churchill(Component):
         self.setup()
 
         if not self.reynolds_number.is_assigned:
-            self.reynolds_number.value = (
-                abs(self.mass_flow.value)
-                * self.hydraulic_diameter.value
-                / (self.dynamic_viscosity.value * self.cross_sectional_area.value)
-            )
+            if not self.mass_flow.is_assigned:
+                self.reynolds_number.value = 2300
+            else:
+                self.reynolds_number.value = (
+                    abs(self.mass_flow.value)
+                    * self.hydraulic_diameter.value
+                    / (self.dynamic_viscosity.value * self.cross_sectional_area.value)
+                )
 
         if not self.friction_factor.is_assigned:
             Re = max(self.reynolds_number.value, 1e-12)
@@ -166,6 +172,17 @@ if __name__ == "__main__":
     diameter = 0.5 * IN_TO_M
     area = np.pi * diameter**2 / 4.0
 
+    Line1F = Churchill(
+        "Line 1 Churchill Friction",
+        network,
+        mass_flow=None,
+        hydraulic_diameter=diameter,
+        dynamic_viscosity=source_fluid.dynamic_viscosity,
+        cross_sectional_area=area,
+        roughness=0.1e-4,
+        friction_factor=None,
+    )
+
 
     Line1 = TestDarcy(
         "Line 1 Darcy",
@@ -175,18 +192,10 @@ if __name__ == "__main__":
         length=1.0,
         inner_diameter=diameter,
         density=source_fluid.density,
+        mass_flow=Line1F.mass_flow,
+        friction_factor=Line1F.friction_factor
     )
 
-    Line1F = Churchill(
-        "Line 1 Churchill Friction",
-        network,
-        mass_flow=Line1.mass_flow,
-        hydraulic_diameter=diameter,
-        dynamic_viscosity=source_fluid.dynamic_viscosity,
-        cross_sectional_area=area,
-        roughness=0.1e-4,
-        friction_factor=Line1.friction_factor,
-    )
 
     print(
         SteadyState(network).solve(
