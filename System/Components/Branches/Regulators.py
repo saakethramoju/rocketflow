@@ -34,7 +34,9 @@ class LiquidRegulator(Component):
 
 
 class IsentropicGasRegulator(Component):
-
+    """
+    Assumes ideal gas
+    """
     def __init__(self,
                  name: str,
                  network: Network,

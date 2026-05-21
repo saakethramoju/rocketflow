@@ -12,7 +12,9 @@ if TYPE_CHECKING:
 
 
 class IsentropicCompressibleOrifice(Component):
-
+    """
+    Assumes ideal gas
+    """
     def __init__(self,
                  name: str,
                  network: Network,

@@ -79,3 +79,26 @@ EPumpMap = TurboMap("E-Pump Map", MapNetwork,
 solution = SteadyState(MapNetwork).solve(return_type='dataframe', verbose=True, static=False)
 print(solution.to_string(index=False))
 '''
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+gamma = 1.4
+
+M = np.linspace(0.01, 5, 1000)
+
+F = M * (1 + (gamma - 1)/2 * M**2)**(
+    -(gamma + 1)/(2 * (gamma - 1))
+)
+
+plt.figure(figsize=(8,5))
+plt.plot(M, F)
+
+plt.axvline(1, linestyle="--")
+plt.xlabel("Mach Number")
+plt.ylabel("F(M)")
+plt.title("Compressible Mass Flow Function")
+plt.grid(True)
+
+plt.show()

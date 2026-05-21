@@ -10,27 +10,6 @@ if TYPE_CHECKING:
     from System import Network
 
 
-def effective_area_from_mass_flow(
-    mass_flow: float,
-    pressure_drop: float,
-    density: float,
-) -> float:
-    """
-    Computes an equivalent CdA/effective area from:
-
-        mdot = CdA * sqrt(2 * rho * abs(dP))
-    """
-    if abs(pressure_drop) < 1e-12:
-        return 0.0
-
-    if density <= 0.0:
-        raise ValueError("density must be positive.")
-
-    return abs(mass_flow) / math.sqrt(2.0 * density * abs(pressure_drop))
-
-
-
-
 class GravityPressureChange(Component):
 
     def __init__(
@@ -429,3 +408,24 @@ def darcy_weisbach_mass_flow(
     mdot = math.copysign(math.sqrt(abs(dP) / Kf), dP)
 
     return mdot, f, Re, regime
+
+
+
+def effective_area_from_mass_flow(
+    mass_flow: float,
+    pressure_drop: float,
+    density: float,
+) -> float:
+    """
+    Computes an equivalent CdA/effective area from:
+
+        mdot = CdA * sqrt(2 * rho * abs(dP))
+    """
+    if abs(pressure_drop) < 1e-12:
+        return 0.0
+
+    if density <= 0.0:
+        raise ValueError("density must be positive.")
+
+    return abs(mass_flow) / math.sqrt(2.0 * density * abs(pressure_drop))
+
