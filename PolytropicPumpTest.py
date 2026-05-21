@@ -3,191 +3,593 @@ from Solvers import *
 
 from constants import *
 
+
 # --- Network Definition ---
-PumpNetwork = Network("Pumped System")
+PumpNetwork = Network("Pumped Sytem")
+
+# these are useful external states,
+# which is why they're at the top
+fuel_shaft_speed = State(25000)
+ox_shaft_speed = State(25000)
+
+chamber_pressure = State(285 * PSIA_TO_PA)
+atmospheric_pressure = 14.67 * PSIA_TO_PA
 
 
-Q_design = 0.01    # m^3/s, close to your previous converged outlet flow
-H_design = 46.5      # m
-N_design = 20000.0   # rpm
-eta_design = 0.56745 # eta_h * eta_m * eta_v = 0.65 * 0.90 * 0.97
-
-shaft_speed = State(30000)
-
-# ---- Fluids -----
+# ---- Fluids ----
+pressurant = "gn2"
 fuel = "rp-1"
+oxidizer = "lox"
 
-SuctionFluid = FluidLookup(
-    "Inlet Fluid",
+
+PressurantSupply = FluidLookup(
+    "COPV Gas",
     PumpNetwork,
-    fuel,
-    pressure=50 * PSIA_TO_PA,
-    temperature=293.15,
+    pressurant,
+    pressure=6000 * PSIA_TO_PA,
+    temperature=300,
 )
 
-DischargeFluid = FluidLookup(
-    "Outlet Fluid",
+FuelUllageGas = IdealGasLookup(
+    "Fuel Tank Ullage Gas",
+    PumpNetwork,
+    pressurant,
+    pressure=80 * PSIA_TO_PA,
+    temperature=300,
+)
+
+OxUllageGas = IdealGasLookup(
+    "Ox Tank Ullage Gas",
+    PumpNetwork,
+    pressurant,
+    pressure=80 * PSIA_TO_PA,
+    temperature=300,
+)
+
+FuelTankFluid = FluidLookup(
+    "Tank Fuel Liquid",
     PumpNetwork,
     fuel,
-    pressure=100 * PSIA_TO_PA,
+    pressure=State(80 * PSIA_TO_PA),
+    temperature=300,
+)
+
+OxTankFluid = FluidLookup(
+    "Tank Oxidizer Liquid",
+    PumpNetwork,
+    oxidizer,
+    pressure=State(80 * PSIA_TO_PA),
+    temperature=90,
+)
+
+FuelPumpInletFluid = FluidLookup(
+    "Fuel Pump Inlet Fluid",
+    PumpNetwork,
+    fuel,
+    pressure=State(75 * PSIA_TO_PA),
     temperature=293.15,
-    flash_values=("pressure", "enthalpy")
+    flash_values=("pressure", "enthalpy"),
+)
+
+OxPumpInletFluid = FluidLookup(
+    "Ox Pump Inlet Fluid",
+    PumpNetwork,
+    oxidizer,
+    pressure=State(75 * PSIA_TO_PA),
+    temperature=90,
+    flash_values=("pressure", "enthalpy"),
+)
+
+FuelPumpDischargeFluid = FluidLookup(
+    "Fuel Pump Outlet Fluid",
+    PumpNetwork,
+    fuel,
+    pressure=State(430 * PSIA_TO_PA),
+    temperature=293.15,
+    flash_values=("pressure", "enthalpy"),
+)
+
+OxPumpDischargeFluid = FluidLookup(
+    "Ox Pump Outlet Fluid",
+    PumpNetwork,
+    oxidizer,
+    pressure=State(335 * PSIA_TO_PA),
+    temperature=90,
+    flash_values=("pressure", "enthalpy"),
 )
 
 
-# ----- Components ------
-Source = PressureBoundary("Source", PumpNetwork, pressure=1000*PSIA_TO_PA)
+FuelManifoldFluid = FluidLookup(
+    "Fuel Manifold Liquid",
+    PumpNetwork,
+    fuel,
+    pressure=State(410 * PSIA_TO_PA),
+    temperature=293.15,
+    flash_values=("pressure", "enthalpy"),
+)
 
-InletLine = DischargeCoefficient("Inlet Line", PumpNetwork, upstream_pressure=Source.pressure,
-                                 downstream_pressure=SuctionFluid.pressure, density=SuctionFluid.density,
-                                 discharge_coefficient=1, cross_sectional_area=1.0e-4)
-
-
-Inlet = IsothermalIncompressibleVolume("Suction Inlet", PumpNetwork, pressure=SuctionFluid.pressure,
-                                       temperature=SuctionFluid.temperature, mass_flow_in=InletLine.mass_flow, 
-                                       mass_flow_out=1.8,
-                                       volume=0.2*IN3_TO_M3)
-
-pump_mdot = Inlet.mass_flow_out
-
-Q_out = pump_mdot / DischargeFluid.density
-
-
-def pump_head(Q_out, N):
-    speed_ratio = N / N_design
-    phi = Q_out / (Q_design * speed_ratio)
-
-    H_shutoff = 1.35 * H_design
-    k = 0.259
-
-    H = H_shutoff * speed_ratio**2 * (1.0 - k * phi**2)
-
-    return H.clip(lower=0.0)
+OxManifoldFluid = FluidLookup(
+    "Ox Manifold Liquid",
+    PumpNetwork,
+    oxidizer,
+    pressure=State(320 * PSIA_TO_PA),
+    temperature=90,
+    flash_values=("pressure", "enthalpy"),
+)
 
 
-def pump_torque(Q_out, N, rho_out):
-    H = pump_head(Q_out, N)
-    omega = np.pi / 30.0 * N
+# ---- Pump Design Conditions ----
+FuelDesignCoefficients = TurboDesignCoefficients(
+    "Fuel Pump Design Coefficients",
+    PumpNetwork,
+    rotor_speed=23000,
+    volumetric_flow=2.7 / 1000,
+    head_rise=323.4,
+    torque=6.31,
+    density=50.8 * LBM_FT3_TO_KG_M3,
+    flow_geometric_parameter=1.56 * IN_TO_M,
+    head_geometric_parameter=1.56 * IN_TO_M,
+    torque_geometric_parameter=1.56 * IN_TO_M,
+)
 
-    mdot = rho_out * Q_out
-    hydraulic_power = mdot * 9.80665 * H
-    shaft_power = hydraulic_power / eta_design
+OxidizerDesignCoefficients = TurboDesignCoefficients(
+    "Oxidizer Pump Design Coefficients",
+    PumpNetwork,
+    rotor_speed=23000,
+    volumetric_flow=4.4 / 1000,
+    head_rise=159.8,
+    torque=4.77,
+    density=1104,
+    flow_geometric_parameter=1.84 * IN_TO_M,
+    head_geometric_parameter=1.84 * IN_TO_M,
+    torque_geometric_parameter=1.84 * IN_TO_M,
+)
 
-    return shaft_power / omega
+
+# ---- Pump Map Data ----
+normalized_flow_coefficient_map = [
+    0.00,
+    0.40,
+    0.70,
+    1.00,
+    1.15,
+    1.30,
+    1.45,
+]
+
+normalized_head_coefficient_map = [
+    1.25,
+    1.20,
+    1.12,
+    1.00,
+    0.84,
+    0.62,
+    0.35,
+]
+
+normalized_torque_coefficient_map = [
+    0.15,
+    0.38,
+    0.66,
+    1.00,
+    1.17,
+    1.33,
+    1.50,
+]
 
 
-FuelEpump = PolytropicPump("Fuel E-Pump",
-                           PumpNetwork,
-                           rotor_speed=shaft_speed,
-                           head_rise=pump_head(Q_out, shaft_speed),
-                           mass_flow=pump_mdot,
-                           torque=pump_torque(Q_out, shaft_speed, DischargeFluid.density),
-                           upstream_density=SuctionFluid.density, 
-                           downstream_density=DischargeFluid.density,
-                           upstream_total_pressure=Inlet.pressure,
-                           discharge_total_pressure=DischargeFluid.pressure,
-                           upstream_total_enthalpy=SuctionFluid.enthalpy)
+# ---- Components ----
+COPV = Boundary(
+    "COPV",
+    PumpNetwork,
+    PressurantSupply.pressure,
+    PressurantSupply.temperature,
+)
 
-Outlet = SimpleVolume("Discharge",
-                      PumpNetwork,
-                      pressure=DischargeFluid.pressure,
-                      enthalpy=DischargeFluid.enthalpy,
-                      density=DischargeFluid.density,
-                      mass_flow_in=FuelEpump.mass_flow,
-                      enthalpy_in=FuelEpump.discharge_total_enthalpy,
-                      volume=0.2*IN3_TO_M3)
+FuelBangBang = IsentropicGasRegulator(
+    "FBB",
+    PumpNetwork,
+    COPV.pressure,
+    COPV.temperature,
+    set_pressure=FuelUllageGas.pressure,
+    discharge_coefficient=1,
+    cross_sectional_area=np.pi / 4 * (0.25 * IN_TO_M)**2,
+    specific_gas_constant=FuelUllageGas.gas_constant,
+    specific_heat_ratio=FuelUllageGas.specific_heat_ratio,
+)
 
-OutletLine = GenericDarcyWeisbach("Outlet Line", PumpNetwork, upstream_pressure=Outlet.pressure, 
-                                   downstream_pressure=101325, length=1.5, cross_sectional_area=0.2*IN2_TO_M2,
-                                   hydraulic_diameter=0.5*IN_TO_M, roughness=0.1e-3, density=Outlet.density, 
-                                   dynamic_viscosity=DischargeFluid.dynamic_viscosity, mass_flow=Outlet.mass_flow_out)
+OxBangBang = IsentropicGasRegulator(
+    "OBB",
+    PumpNetwork,
+    COPV.pressure,
+    COPV.temperature,
+    set_pressure=OxUllageGas.pressure,
+    discharge_coefficient=1,
+    cross_sectional_area=np.pi / 4 * (0.25 * IN_TO_M)**2,
+    specific_gas_constant=OxUllageGas.gas_constant,
+    specific_heat_ratio=OxUllageGas.specific_heat_ratio,
+)
 
-solution = SteadyState(PumpNetwork).solve(return_type='dataframe', verbose=True, static=False)
+FuelTank = PressurizedTank(
+    "Fuel Tank",
+    PumpNetwork,
+    pressure=FuelTankFluid.pressure,
+    pressurant_density=FuelUllageGas.density,
+    liquid_density=FuelTankFluid.density,
+    collapse_factor=1,
+    ullage_temperature=FuelUllageGas.temperature,
+    liquid_temperature=FuelTankFluid.temperature,
+    mass_flow_in=FuelBangBang.mass_flow,
+)
+
+OxTank = PressurizedTank(
+    "Ox Tank",
+    PumpNetwork,
+    pressure=OxTankFluid.pressure,
+    pressurant_density=OxUllageGas.density,
+    liquid_density=OxTankFluid.density,
+    collapse_factor=1.4,
+    ullage_temperature=OxUllageGas.temperature,
+    liquid_temperature=OxTankFluid.temperature,
+    mass_flow_in=OxBangBang.mass_flow,
+)
+
+FuelGravitydP = GravityPressureChange(
+    "Fuel Runline Gravity dP",
+    PumpNetwork,
+    upstream_pressure=FuelTank.pressure,
+    density=FuelTank.liquid_density,
+    elevation_change=-0.5,
+    mass_flow=FuelTank.mass_flow_out
+)
+
+OxGravitydP = GravityPressureChange(
+    "Ox Runline Gravity dP",
+    PumpNetwork,
+    upstream_pressure=OxTank.pressure,
+    density=OxTank.liquid_density,
+    elevation_change=-0.5,
+    mass_flow=OxTank.mass_flow_out
+)
+
+FuelRunline = GenericDarcyWeisbach(
+    "Fuel Main Line",
+    PumpNetwork,
+    upstream_pressure=FuelGravitydP.downstream_pressure,
+    downstream_pressure=FuelPumpInletFluid.pressure,
+    length=0.5,
+    cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
+    hydraulic_diameter=0.5 * IN_TO_M,
+    density=FuelTank.liquid_density,
+    mass_flow=FuelTank.mass_flow_out,
+)
+
+FuelRunlineFriction = Colebrook(
+    "Fuel Main Line Friction",
+    PumpNetwork,
+    mass_flow=FuelRunline.mass_flow,
+    hydraulic_diameter=FuelRunline.hydraulic_diameter,
+    dynamic_viscosity=FuelTankFluid.dynamic_viscosity,
+    cross_sectional_area=FuelRunline.cross_sectional_area,
+    roughness=1.5e-6,
+    friction_factor=FuelRunline.friction_factor,
+)
+
+
+OxRunline = GenericDarcyWeisbach(
+    "Ox Main Line",
+    PumpNetwork,
+    upstream_pressure=OxGravitydP.downstream_pressure,
+    downstream_pressure=OxPumpInletFluid.pressure,
+    length=0.5,
+    cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
+    hydraulic_diameter=0.5 * IN_TO_M,
+    density=OxTank.liquid_density,
+    mass_flow=OxTank.mass_flow_out,
+)
+
+OxRunlineFriction = Colebrook(
+    "Ox Main Line Friction",
+    PumpNetwork,
+    mass_flow=OxRunline.mass_flow,
+    hydraulic_diameter=OxRunline.hydraulic_diameter,
+    dynamic_viscosity=OxTankFluid.dynamic_viscosity,
+    cross_sectional_area=OxRunline.cross_sectional_area,
+    roughness=1.5e-6,
+    friction_factor=OxRunline.friction_factor,
+)
+
+
+FuelPumpInlet = IsothermalIncompressibleVolume(
+    "Fuel Suction Inlet",
+    PumpNetwork,
+    pressure=FuelPumpInletFluid.pressure,
+    temperature=FuelPumpInletFluid.temperature,
+    density=FuelPumpInletFluid.density,
+    enthalpy=FuelPumpInletFluid.enthalpy,
+    mass_flow_in=FuelRunline.mass_flow,
+    mass_flow_out=State((2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
+    volume=0.2 * IN3_TO_M3,
+)
+
+OxPumpInlet = IsothermalIncompressibleVolume(
+    "Ox Suction Inlet",
+    PumpNetwork,
+    pressure=OxPumpInletFluid.pressure,
+    temperature=OxPumpInletFluid.temperature,
+    density=OxPumpInletFluid.density,
+    enthalpy=OxPumpInletFluid.enthalpy,
+    mass_flow_in=OxRunline.mass_flow,
+    mass_flow_out=State(2.2 * (2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
+    volume=0.2 * IN3_TO_M3,
+)
+
+FuelEPumpMap = TurboMap(
+    "Fuel E-Pump Map",
+    PumpNetwork,
+    rotor_speed=fuel_shaft_speed,
+    volumetric_flow=FuelPumpInlet.mass_flow_out / FuelPumpDischargeFluid.density,
+    density=FuelPumpInletFluid.density,
+    flow_geometric_parameter=1.56 * IN_TO_M,
+    head_geometric_parameter=1.56 * IN_TO_M,
+    torque_geometric_parameter=1.56 * IN_TO_M,
+    design_flow_coefficient=FuelDesignCoefficients.flow_coefficient,
+    design_head_coefficient=FuelDesignCoefficients.head_coefficient,
+    design_torque_coefficient=FuelDesignCoefficients.torque_coefficient,
+    normalized_flow_coefficient_map=normalized_flow_coefficient_map,
+    normalized_head_coefficient_map=normalized_head_coefficient_map,
+    normalized_torque_coefficient_map=normalized_torque_coefficient_map,
+)
+
+OxEPumpMap = TurboMap(
+    "Ox E-Pump Map",
+    PumpNetwork,
+    rotor_speed=ox_shaft_speed,
+    volumetric_flow=OxPumpInlet.mass_flow_out / OxPumpDischargeFluid.density,
+    density=OxPumpInletFluid.density,
+    flow_geometric_parameter=1.84 * IN_TO_M,
+    head_geometric_parameter=1.84 * IN_TO_M,
+    torque_geometric_parameter=1.84 * IN_TO_M,
+    design_flow_coefficient=OxidizerDesignCoefficients.flow_coefficient,
+    design_head_coefficient=OxidizerDesignCoefficients.head_coefficient,
+    design_torque_coefficient=OxidizerDesignCoefficients.torque_coefficient,
+    normalized_flow_coefficient_map=normalized_flow_coefficient_map,
+    normalized_head_coefficient_map=normalized_head_coefficient_map,
+    normalized_torque_coefficient_map=normalized_torque_coefficient_map,
+)
+
+FuelEPump = PolytropicPump(
+    "Fuel Electric Pump",
+    PumpNetwork,
+    rotor_speed=fuel_shaft_speed,
+    head_rise=FuelEPumpMap.head_rise,
+    mass_flow=FuelPumpInlet.mass_flow_out,
+    torque=FuelEPumpMap.torque,
+    upstream_density=FuelPumpInlet.density,
+    downstream_density=FuelPumpDischargeFluid.density,
+    upstream_total_pressure=FuelPumpInlet.pressure,
+    discharge_total_pressure=FuelPumpDischargeFluid.pressure,
+    upstream_total_enthalpy=FuelPumpInlet.enthalpy,
+)
+
+OxEPump = PolytropicPump(
+    "Ox Electric Pump",
+    PumpNetwork,
+    rotor_speed=ox_shaft_speed,
+    head_rise=OxEPumpMap.head_rise,
+    mass_flow=OxPumpInlet.mass_flow_out,
+    torque=OxEPumpMap.torque,
+    upstream_density=OxPumpInlet.density,
+    downstream_density=OxPumpDischargeFluid.density,
+    upstream_total_pressure=OxPumpInlet.pressure,
+    discharge_total_pressure=OxPumpDischargeFluid.pressure,
+    upstream_total_enthalpy=OxPumpInlet.enthalpy,
+)
+
+FuelPumpOutlet = SimpleVolume(
+    "Fuel Discharge Outlet",
+    PumpNetwork,
+    pressure=FuelPumpDischargeFluid.pressure,
+    enthalpy=FuelPumpDischargeFluid.enthalpy,
+    volume=0.2 * IN3_TO_M3,
+    temperature=FuelPumpDischargeFluid.temperature,
+    density=FuelPumpDischargeFluid.density,
+    mass_flow_in=FuelEPump.mass_flow,
+    enthalpy_in=FuelEPump.discharge_total_enthalpy,
+)
+
+
+OxPumpOutlet = SimpleVolume(
+    "Ox Discharge Outlet",
+    PumpNetwork,
+    pressure=OxPumpDischargeFluid.pressure,
+    enthalpy=OxPumpDischargeFluid.enthalpy,
+    volume=0.2 * IN3_TO_M3,
+    temperature=OxPumpDischargeFluid.temperature,
+    density=OxPumpDischargeFluid.density,
+    mass_flow_in=OxEPump.mass_flow,
+    enthalpy_in=OxEPump.discharge_total_enthalpy,
+)
+
+'''
+FuelInjectorInletLine = DischargeCoefficient(
+    "Fuel Injector Inlet",
+    PumpNetwork,
+    upstream_pressure=FuelPumpOutlet.pressure,
+    downstream_pressure=FuelManifoldFluid.pressure,
+    density=FuelPumpOutlet.density,
+    discharge_coefficient=1,
+    cross_sectional_area=5.0 * 0.56e-4,
+    mass_flow=FuelPumpOutlet.mass_flow_out,
+)
+
+OxInjectorInletLine = DischargeCoefficient(
+    "Ox Injector Inlet",
+    PumpNetwork,
+    upstream_pressure=OxPumpOutlet.pressure,
+    downstream_pressure=OxManifoldFluid.pressure,
+    density=OxPumpOutlet.density,
+    discharge_coefficient=1,
+    cross_sectional_area=5.0 * 1.25e-4,
+    mass_flow=OxPumpOutlet.mass_flow_out,
+)
+'''
+
+FuelInjectorInletLine = GenericDarcyWeisbach(
+    "Fuel Injector Inlet",
+    PumpNetwork,
+    upstream_pressure=FuelPumpOutlet.pressure,
+    downstream_pressure=FuelManifoldFluid.pressure,
+    length=0.25,
+    cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
+    hydraulic_diameter=0.5 * IN_TO_M,
+    density=FuelPumpOutlet.density,
+    mass_flow=FuelPumpOutlet.mass_flow_out,
+)
+
+FuelInjectorInletFriction = Colebrook(
+    "Fuel Injector Inlet Friction",
+    PumpNetwork,
+    mass_flow=FuelInjectorInletLine.mass_flow,
+    hydraulic_diameter=FuelInjectorInletLine.hydraulic_diameter,
+    dynamic_viscosity=FuelPumpDischargeFluid.dynamic_viscosity,
+    cross_sectional_area=FuelInjectorInletLine.cross_sectional_area,
+    roughness=1.5e-6,
+    friction_factor=FuelInjectorInletLine.friction_factor,
+)
+
+
+OxInjectorInletLine = GenericDarcyWeisbach(
+    "Ox Injector Inlet",
+    PumpNetwork,
+    upstream_pressure=OxPumpOutlet.pressure,
+    downstream_pressure=OxManifoldFluid.pressure,
+    length=0.25,
+    cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
+    hydraulic_diameter=0.5 * IN_TO_M,
+    density=OxPumpOutlet.density,
+    mass_flow=OxPumpOutlet.mass_flow_out,
+)
+
+OxInjectorInletFriction = Colebrook(
+    "Ox Injector Inlet Friction",
+    PumpNetwork,
+    mass_flow=OxInjectorInletLine.mass_flow,
+    hydraulic_diameter=OxInjectorInletLine.hydraulic_diameter,
+    dynamic_viscosity=OxPumpDischargeFluid.dynamic_viscosity,
+    cross_sectional_area=OxInjectorInletLine.cross_sectional_area,
+    roughness=1.5e-6,
+    friction_factor=OxInjectorInletLine.friction_factor,
+)
+
+
+FuelManifold = SimpleVolume(
+    "Fuel Injector Manifold",
+    PumpNetwork,
+    pressure=FuelManifoldFluid.pressure,
+    enthalpy=FuelManifoldFluid.enthalpy,
+    volume=685 * IN3_TO_M3,
+    temperature=FuelManifoldFluid.temperature,
+    density=FuelManifoldFluid.density,
+    mass_flow_in=FuelInjectorInletLine.mass_flow,
+    enthalpy_in=FuelPumpOutlet.enthalpy,
+)
+
+OxManifold = SimpleVolume(
+    "Ox Injector Manifold",
+    PumpNetwork,
+    pressure=OxManifoldFluid.pressure,
+    enthalpy=OxManifoldFluid.enthalpy,
+    volume=685 * IN3_TO_M3,
+    temperature=OxManifoldFluid.temperature,
+    density=OxManifoldFluid.density,
+    mass_flow_in=OxInjectorInletLine.mass_flow,
+    enthalpy_in=OxPumpOutlet.enthalpy,
+)
+
+FuelInjector = DischargeCoefficient(
+    "Fuel Injector Orifices",
+    PumpNetwork,
+    upstream_pressure=FuelManifold.pressure,
+    downstream_pressure=chamber_pressure,
+    density=FuelManifold.density,
+    discharge_coefficient=1,
+    cross_sectional_area=0.56e-4,
+    mass_flow=FuelManifold.mass_flow_out,
+)
+
+OxInjector = DischargeCoefficient(
+    "Ox Injector Orifices",
+    PumpNetwork,
+    upstream_pressure=OxManifold.pressure,
+    downstream_pressure=chamber_pressure,
+    density=OxManifold.density,
+    discharge_coefficient=1,
+    cross_sectional_area=1.25e-4,
+    mass_flow=OxManifold.mass_flow_out,
+)
+
+MainChamber = MainCombustionChamber(
+    "MCC",
+    PumpNetwork,
+    chamber_pressure=chamber_pressure,
+    oxidizer_mass_flow=OxInjector.mass_flow,
+    fuel_mass_flow=FuelInjector.mass_flow,
+)
+
+Nozzle = RocketCEAChokedNozzle(
+    "Nozzle",
+    PumpNetwork,
+    fuel=fuel,
+    oxidizer=oxidizer,
+    chamber_pressure=MainChamber.chamber_pressure,
+    throat_area=10 * IN2_TO_M2,
+    expansion_ratio=4,
+    mixture_ratio=MainChamber.oxidizer_mass_flow / MainChamber.fuel_mass_flow,
+    ambient_pressure=atmospheric_pressure,
+    characterstic_velocity_efficiency=1.0,
+    thrust_coefficient_efficiency=1.0,
+    mass_flow=MainChamber.nozzle_mass_flow,
+)
+
+
+ChamberPressureBalance = Balance(
+    "Chamber Pressure Balance",
+    PumpNetwork,
+    variable=FuelBangBang.discharge_coefficient,
+    function=(chamber_pressure - 285 * PSIA_TO_PA),
+)
+
+MixtureRatioBalance = Balance(
+    "Mixture Ratio Balance",
+    PumpNetwork,
+    variable=OxBangBang.discharge_coefficient,
+    function=(OxInjector.mass_flow / FuelInjector.mass_flow - 2.2),
+)
+
+FuelPumpShaftSpeedBalance = Balance(
+    "FPump Shaft Speed Balance",
+    PumpNetwork,
+    variable=FuelEPump.rotor_speed,
+    function=FuelTank.pressure - 80*PSIA_TO_PA
+)
+
+OxPumpShaftSpeedBalance = Balance(
+    "OPump Shaft Speed Balance",
+    PumpNetwork,
+    variable=OxEPump.rotor_speed,
+    function=OxTank.pressure - 80*PSIA_TO_PA
+)
+
+
+solution = SteadyState(PumpNetwork).solve(
+    return_type="dataframe",
+    verbose=True,
+    static=False,
+)
+
 print(solution.to_string(index=False))
 
 
-
-
-
-
-# ----- Polytropic Pump Summary -----
-mdot = FuelEpump.mass_flow.value
-
-rho1 = FuelEpump.upstream_density.value
-rho2 = FuelEpump.downstream_density.value
-
-Q1 = FuelEpump.inlet_volumetric_flow.value
-Q2 = FuelEpump.outlet_volumetric_flow.value
-
-N = FuelEpump.rotor_speed.value
-omega = np.pi / 30.0 * N
-
-H_m = FuelEpump.head_rise.value
-H_specific = FuelEpump.gravitational_acceleration.value * H_m
-
-T = FuelEpump.torque.value
-eta = FuelEpump.efficiency.value
-shaft_power = FuelEpump.shaft_power.value
-
-po_in = FuelEpump.upstream_total_pressure.value
-po_out_node = FuelEpump.discharge_total_pressure.value
-po_out_pred = FuelEpump._predicted_discharge_total_pressure
-
-dp = po_out_node - po_in
-
-ho_in = FuelEpump.upstream_total_enthalpy.value
-ho_out = FuelEpump.discharge_total_enthalpy.value
-dho = ho_out - ho_in
-
-pressure_ratio = po_out_node / po_in
-density_ratio = rho2 / rho1
-
-beta = 1.0 / (
-    1.0 - np.log(density_ratio) / np.log(pressure_ratio)
-)
-
-print("\n" + "=" * 70)
-print("                    POLYTROPIC PUMP SUMMARY")
-print("=" * 70)
-
-print(f"{'Fluid':40s}: {fuel}")
-print(f"{'Rotor Speed':40s}: {N:14.3f} RPM")
-print(f"{'Angular Speed':40s}: {omega:14.3f} rad/s")
-
-print("\n--- Flow ---")
-print(f"{'Mass Flow':40s}: {mdot:14.6f} kg/s")
-print(f"{'Inlet Density':40s}: {rho1:14.3f} kg/m^3")
-print(f"{'Outlet Density':40s}: {rho2:14.3f} kg/m^3")
-print(f"{'Density Ratio rho2/rho1':40s}: {density_ratio:14.6f}")
-print(f"{'Inlet Volumetric Flow':40s}: {Q1:14.6f} m^3/s")
-print(f"{'Outlet Volumetric Flow':40s}: {Q2:14.6f} m^3/s")
-print(f"{'Inlet Volumetric Flow':40s}: {Q1 / IN3_TO_M3 * 60.0:14.3f} in^3/min")
-print(f"{'Outlet Volumetric Flow':40s}: {Q2 / IN3_TO_M3 * 60.0:14.3f} in^3/min")
-
-print("\n--- Pressure / Head ---")
-print(f"{'Inlet Total Pressure':40s}: {po_in:14.3f} Pa")
-print(f"{'Inlet Total Pressure':40s}: {po_in / PSIA_TO_PA:14.3f} psia")
-print(f"{'Outlet Node Total Pressure':40s}: {po_out_node:14.3f} Pa")
-print(f"{'Outlet Node Total Pressure':40s}: {po_out_node / PSIA_TO_PA:14.3f} psia")
-print(f"{'Pump Predicted Outlet Pressure':40s}: {po_out_pred:14.3f} Pa")
-print(f"{'Pump Predicted Outlet Pressure':40s}: {po_out_pred / PSIA_TO_PA:14.3f} psia")
-print(f"{'Pressure Rise':40s}: {dp:14.3f} Pa")
-print(f"{'Pressure Rise':40s}: {dp / PSIA_TO_PA:14.3f} psid")
-print(f"{'Pressure Ratio po2/po1':40s}: {pressure_ratio:14.6f}")
-print(f"{'Head Rise':40s}: {H_m:14.3f} m")
-print(f"{'Specific Head gH':40s}: {H_specific:14.3f} J/kg")
-print(f"{'Polytropic Beta':40s}: {beta:14.6f}")
-
-print("\n--- Enthalpy ---")
-print(f"{'Inlet Total Enthalpy':40s}: {ho_in:14.3f} J/kg")
-print(f"{'Pump Discharge Total Enthalpy':40s}: {ho_out:14.3f} J/kg")
-print(f"{'Enthalpy Rise':40s}: {dho:14.3f} J/kg")
-print(f"{'Ideal Head Work gH':40s}: {H_specific:14.3f} J/kg")
-print(f"{'Loss / Heating Contribution':40s}: {dho - H_specific:14.3f} J/kg")
-
-print("\n--- Power / Torque ---")
-print(f"{'Torque':40s}: {T:14.6f} N-m")
-print(f"{'Shaft Power':40s}: {shaft_power:14.3f} W")
-print(f"{'Shaft Power':40s}: {shaft_power / 1000.0:14.3f} kW")
-print(f"{'Efficiency':40s}: {eta:14.6f}")
-print(f"{'Efficiency':40s}: {100.0 * eta:14.3f} %")
+print(f"Ox Tank:{OxTank.pressure.value * PA_TO_PSIA:.3f} psia")
+print(f"Fuel Tank:{FuelTank.pressure.value * PA_TO_PSIA:.3f} psia")
