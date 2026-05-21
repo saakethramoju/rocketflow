@@ -25,7 +25,7 @@ class SteadyState:
         n_residuals = len(self.network.residuals)
         try:
             self.network.evaluate_states()
-            return np.array(self.network.scaled_residuals, dtype=float)
+            return np.array(self.network.residuals, dtype=float)
         except Exception:
             penalty = np.ones(n_residuals, dtype=float) * 1e6
             # add x-dependence so finite-difference Jacobian is nonzero
@@ -96,12 +96,13 @@ class SteadyState:
                 verbose=verbose,
             )
 
+        self.network.pre_evaluation()
+
         x0 = np.array(self.network.iteration_values, dtype=float)
 
-        self.network.pre_evaluation()
         self.network.evaluate_states()
 
-        r0 = np.array(self.network.scaled_residuals, dtype=float)
+        r0 = np.array(self.network.residuals, dtype=float)
 
         no_iteration_variables = len(x0) == 0
         no_residuals = len(r0) == 0
@@ -205,14 +206,14 @@ class SteadyState:
             for i, val in enumerate(sol.x):
                 print(f"  x[{i:<2}] {'':<34} = {val:.6e}")
 
-        print("\n[Scaled Residuals]")
+        print("\n[Residuals]")
         for i, r in enumerate(sol.fun):
             print(f"  r[{i:<2}] {'':<34} = {r:.3e}")
 
         max_resid = np.max(np.abs(sol.fun))
         rms_resid = np.sqrt(np.mean(sol.fun**2))
 
-        print("\n[Scaled Residual Summary]")
+        print("\n[Residual Summary]")
         print(f"  Max |residual| : {max_resid:.3e}")
         print(f"  RMS residual   : {rms_resid:.3e}")
 

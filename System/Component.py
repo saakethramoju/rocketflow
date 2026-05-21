@@ -111,13 +111,7 @@ class Component(ABC):
     #@abstractmethod
     def residuals(self) -> list[float]:
         return []
-    
-    @property
-    def residual_scalar(self) -> list[float]:
-        return [1.0] * len(self.residuals)
 
-    def __repr__(self):
-        return f"Component ({self.__class__.__name__}: {self.name})"
 
 
     def __str__(self):

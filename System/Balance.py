@@ -77,15 +77,9 @@ class Balance:
         function: Union[Callable[[], float], State],
         bounds: tuple[float | None, float | None] | None = None,
         keep_feasible: bool = False,
-        residual_scalar: float = 1.0,
     ):
         self.name = name
         self.network = network
-
-        if residual_scalar == 0.0:
-            raise ValueError("residual_scaling_factor cannot be zero.")
-        
-        self.residual_scalar = [float(residual_scalar)]
 
         if variable.is_derived:
             raise TypeError("variable cannot be a derived State.")
