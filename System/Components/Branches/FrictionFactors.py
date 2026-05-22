@@ -79,12 +79,12 @@ class Churchill(Component):
         name: str,
         network: Network,
         mass_flow: State,
+        friction_factor: State,
         hydraulic_diameter: State | float,
-        poiseuille_number: float,
         dynamic_viscosity: State,
         cross_sectional_area: State | float,
         roughness: State | float = 0.0,
-        friction_factor: State | float | None = None,
+        poiseuille_number: float = 16,
         reynolds_number: State | float | None = None,
     ):
         self.setup()
