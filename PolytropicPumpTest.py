@@ -234,15 +234,6 @@ OxTank = PressurizedTank(
     mass_flow_in=OxBangBang.mass_flow,
 )
 
-FuelGravitydP = GravityPressureChange(
-    "Fuel Runline Gravity dP",
-    PumpNetwork,
-    upstream_pressure=FuelTank.pressure,
-    density=FuelTank.liquid_density,
-    elevation_change=-0.5,
-    mass_flow=FuelTank.mass_flow_out
-)
-
 OxGravitydP = GravityPressureChange(
     "Ox Runline Gravity dP",
     PumpNetwork,
@@ -255,13 +246,24 @@ OxGravitydP = GravityPressureChange(
 FuelRunline = GenericDarcyWeisbach(
     "Fuel Main Line",
     PumpNetwork,
-    upstream_pressure=FuelGravitydP.downstream_pressure,
+    upstream_pressure=State(), # test to see if gravity could go after Darcy
     downstream_pressure=FuelPumpInletFluid.pressure,
     length=0.5,
     cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
     hydraulic_diameter=0.5 * IN_TO_M,
     density=FuelTank.liquid_density,
     mass_flow=FuelTank.mass_flow_out,
+)
+
+
+FuelGravitydP = GravityPressureChange(
+    "Fuel Runline Gravity dP",
+    PumpNetwork,
+    upstream_pressure=FuelTank.pressure,
+    density=FuelTank.liquid_density,
+    elevation_change=-0.5,
+    mass_flow=FuelTank.mass_flow_out,
+    downstream_pressure=FuelRunline.upstream_pressure
 )
 
 FuelRunlineFriction = Colebrook(

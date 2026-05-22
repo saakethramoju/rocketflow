@@ -60,3 +60,7 @@ class IsentropicCompressibleOrifice(Component):
             flow_function = np.sqrt((2 * g / (R * To * (g - 1))) * (pressure_ratio ** (2 / g) - pressure_ratio ** ((g + 1) / g)))
 
         self.mass_flow.value = sign * CdA * Po * flow_function
+
+
+
+class FannoFlow(Component): pass

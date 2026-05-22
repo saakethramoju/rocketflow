@@ -10,8 +10,6 @@ if TYPE_CHECKING:
     from System import Network
 
 
-
-
 class Colebrook(Component):
 
     def __init__(
@@ -33,6 +31,8 @@ class Colebrook(Component):
 
         if not self.friction_factor.is_assigned:
             self.friction_factor.value = self.initial_friction_factor()
+
+        self.log_friction_factor = State(np.log(self.friction_factor.value))
 
     def update_reynolds_number(self) -> None:
         if not self.mass_flow.is_assigned:
@@ -88,17 +88,16 @@ class Colebrook(Component):
 
     def evaluate_states(self):
         self.update_reynolds_number()
+        self.friction_factor.value = np.exp(self.log_friction_factor.value)
 
     @property
     def iteration_variables(self):
-        return [self.friction_factor]
+        return [self.log_friction_factor]
 
     @property
     def residuals(self):
         return [self.colebrook_residual()]
-
-
-
+    
 
 
 
@@ -122,6 +121,8 @@ class Churchill(Component):
 
         if not self.friction_factor.is_assigned:
             self.friction_factor.value = self.churchill_friction_factor()
+
+        self.log_friction_factor = State(np.log(self.friction_factor.value))
 
     def update_reynolds_number(self) -> None:
         self.reynolds_number.value = (
@@ -150,10 +151,11 @@ class Churchill(Component):
 
     def evaluate_states(self):
         self.update_reynolds_number()
+        self.friction_factor.value = np.exp(self.log_friction_factor.value)
 
     @property
     def iteration_variables(self):
-        return [self.friction_factor]
+        return [self.log_friction_factor]
 
     @property
     def residuals(self):

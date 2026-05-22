@@ -73,6 +73,7 @@ class GenericDarcyWeisbach(Component):
         self.setup()
         self._predicted_mass_flow = None
 
+    def pre_evaluation(self):
         if not self.mass_flow.is_assigned:
             self.mass_flow.value = initial_mass_flow_guess(
                 self.upstream_pressure.value - self.downstream_pressure.value,
@@ -125,6 +126,7 @@ class CircularPipeDarcyWeisbach(Component):
         self.hydraulic_diameter = self.inner_diameter
         self.cross_sectional_area = State(math.pi * self.inner_diameter.value**2 / 4.0)
 
+    def pre_evaluation(self):
         if not self.mass_flow.is_assigned:
             self.mass_flow.value = initial_mass_flow_guess(
                 self.upstream_pressure.value - self.downstream_pressure.value,
@@ -158,6 +160,8 @@ class CircularPipeDarcyWeisbach(Component):
         return [self.mass_flow.value - self._predicted_mass_flow]
 
 
+
+
 class RectangularDuctDarcyWeisbach(Component):
 
     def __init__(
@@ -181,6 +185,7 @@ class RectangularDuctDarcyWeisbach(Component):
         self.hydraulic_diameter = State()
         self.update_geometry()
 
+    def pre_evaluation(self):
         if not self.mass_flow.is_assigned:
             self.mass_flow.value = initial_mass_flow_guess(
                 self.upstream_pressure.value - self.downstream_pressure.value,
@@ -224,6 +229,8 @@ class RectangularDuctDarcyWeisbach(Component):
         return [self.mass_flow.value - self._predicted_mass_flow]
 
 
+
+
 class EllipticalDuctDarcyWeisbach(Component):
 
     def __init__(
@@ -247,6 +254,7 @@ class EllipticalDuctDarcyWeisbach(Component):
         self.hydraulic_diameter = State()
         self.update_geometry()
 
+    def pre_evaluation(self):
         if not self.mass_flow.is_assigned:
             self.mass_flow.value = initial_mass_flow_guess(
                 self.upstream_pressure.value - self.downstream_pressure.value,
@@ -294,6 +302,8 @@ class EllipticalDuctDarcyWeisbach(Component):
         return [self.mass_flow.value - self._predicted_mass_flow]
 
 
+
+
 def predicted_darcy_mass_flow(
     pressure_drop: float,
     density: float,
@@ -323,6 +333,8 @@ def predicted_darcy_mass_flow(
     return math.copysign(math.sqrt(abs(pressure_drop) / Kf), pressure_drop)
 
 
+
+
 def initial_mass_flow_guess(
     pressure_drop: float,
     density: float,
@@ -341,6 +353,8 @@ def initial_mass_flow_guess(
         area * math.sqrt(2.0 * density * abs(pressure_drop)),
         pressure_drop,
     )
+
+
 
 
 def effective_area_from_mass_flow(
