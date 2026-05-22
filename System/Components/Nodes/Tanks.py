@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from System import Network
 
 
-class SimpleTank(Component):
+class SimpleIsothermalTank(Component):
 
     def __init__(self, 
                  name: str,
@@ -29,6 +29,7 @@ class SimpleTank(Component):
             self.head_pressure.value = (self.density.value 
                                         * self.gravitational_acceleration.value 
                                         * self.liquid_height.value)
+            
             
 
 

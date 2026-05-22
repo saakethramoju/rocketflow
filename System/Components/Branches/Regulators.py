@@ -40,14 +40,15 @@ class IsentropicGasRegulator(Component):
     def __init__(self,
                  name: str,
                  network: Network,
-                 upstream_pressure: State,
-                 upstream_temperature: State,
+                 upstream_total_pressure: State,
+                 upstream_total_temperature: State,
                  set_pressure: State,
                  discharge_coefficient: float,
                  cross_sectional_area: float,
                  specific_gas_constant: float,
                  specific_heat_ratio: State,
-                 mass_flow: State | None = None):
+                 mass_flow: State | None = None,
+                 total_enthalpy: State | None = None):
         
         self.setup()
 
@@ -55,8 +56,8 @@ class IsentropicGasRegulator(Component):
 
     def evaluate_states(self):
 
-        P1 = self.upstream_pressure.value
-        T1 = self.upstream_temperature.value
+        P1 = self.upstream_total_pressure.value
+        T1 = self.upstream_total_temperature.value
         P2 = self.set_pressure.value
 
         CdA = self.discharge_coefficient.value * self.cross_sectional_area.value
@@ -83,3 +84,6 @@ class IsentropicGasRegulator(Component):
             flow_function = np.sqrt((2 * g / (R * To * (g - 1))) * (pressure_ratio ** (2 / g) - pressure_ratio ** ((g + 1) / g)))
 
         self.mass_flow.value = sign * CdA * Po * flow_function
+
+        cp = g * R / (g - 1.0)
+        self.total_enthalpy.value = cp * To

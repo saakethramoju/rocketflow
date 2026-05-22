@@ -58,7 +58,10 @@ class IsothermalIncompressibleVolume(Component):
 
 
 class SimpleVolume(Component):
-
+    """
+    Assume the flow leaving has total enthalpy
+    and not static. Same with inlet flow.
+    """
     def __init__(self,
                  name:str,
                  network: Network,
@@ -86,7 +89,10 @@ class SimpleVolume(Component):
 
 
 class SimpleFlowSplitter(Component):
-
+    """
+    Assume the flow leaving has total enthalpy
+    and not static. Same with inlet flow.
+    """
     def __init__(self,
                  name:str,
                  network: Network,
