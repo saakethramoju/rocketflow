@@ -63,4 +63,17 @@ class IsentropicCompressibleOrifice(Component):
 
 
 
-class FannoFlow(Component): pass
+
+
+
+class FannoFlow(Component):
+    """
+    Assumes constant friction factor
+    based on upstream state
+    """
+    def __init__(self, 
+                 name: str, 
+                 network: Network,
+                 mass_flow: State,
+                 ):
+        self.setup()

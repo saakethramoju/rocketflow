@@ -245,7 +245,7 @@ OxGravitydP = GravityPressureChange(
     mass_flow=OxTank.mass_flow_out
 )
 
-FuelRunline = GenericDarcyWeisbach(
+FuelRunline = DarcyWeisbach(
     "Fuel Main Line",
     PumpNetwork,
     upstream_pressure=State(),
@@ -281,7 +281,7 @@ FuelRunlineFriction = Colebrook(
 )
 
 
-OxRunline = GenericDarcyWeisbach(
+OxRunline = DarcyWeisbach(
     "Ox Main Line",
     PumpNetwork,
     upstream_pressure=OxGravitydP.downstream_pressure,
@@ -443,7 +443,7 @@ OxInjectorInletLine = DischargeCoefficient(
 )
 '''
 
-FuelInjectorInletLine = GenericDarcyWeisbach(
+FuelInjectorInletLine = DarcyWeisbach(
     "Fuel Injector Inlet",
     PumpNetwork,
     upstream_pressure=FuelPumpOutlet.pressure,
@@ -468,7 +468,7 @@ FuelInjectorInletFriction = Colebrook(
 )
 
 
-OxInjectorInletLine = GenericDarcyWeisbach(
+OxInjectorInletLine = DarcyWeisbach(
     "Ox Injector Inlet",
     PumpNetwork,
     upstream_pressure=OxPumpOutlet.pressure,
