@@ -60,6 +60,7 @@ class GenericDarcyWeisbach(Component):
         self,
         name: str,
         network: Network,
+        mass_flow: State,
         upstream_pressure: State,
         downstream_pressure: State,
         length: float,
@@ -67,21 +68,14 @@ class GenericDarcyWeisbach(Component):
         hydraulic_diameter: float,
         density: State,
         friction_factor: State | float | None = None,
-        mass_flow: State | float | None = None,
         effective_area: State | None = None,
     ):
         self.setup()
         self._predicted_mass_flow = None
 
-    def pre_evaluation(self):
-        if not self.mass_flow.is_assigned:
-            self.mass_flow.value = initial_mass_flow_guess(
-                self.upstream_pressure.value - self.downstream_pressure.value,
-                self.density.value,
-                self.cross_sectional_area.value,
-            )
 
     def evaluate_states(self):
+        
         self._predicted_mass_flow = predicted_darcy_mass_flow(
             pressure_drop=self.upstream_pressure.value - self.downstream_pressure.value,
             density=self.density.value,
@@ -111,13 +105,13 @@ class CircularPipeDarcyWeisbach(Component):
         self,
         name: str,
         network: Network,
+        mass_flow: State,
         upstream_pressure: State,
         downstream_pressure: State,
         length: float,
         inner_diameter: float,
         density: State,
         friction_factor: State | float | None = None,
-        mass_flow: State | float | None = None,
         effective_area: State | None = None,
     ):
         self.setup()
@@ -126,13 +120,6 @@ class CircularPipeDarcyWeisbach(Component):
         self.hydraulic_diameter = self.inner_diameter
         self.cross_sectional_area = State(math.pi * self.inner_diameter.value**2 / 4.0)
 
-    def pre_evaluation(self):
-        if not self.mass_flow.is_assigned:
-            self.mass_flow.value = initial_mass_flow_guess(
-                self.upstream_pressure.value - self.downstream_pressure.value,
-                self.density.value,
-                self.cross_sectional_area.value,
-            )
 
     def evaluate_states(self):
         self.cross_sectional_area.value = math.pi * self.inner_diameter.value**2 / 4.0
@@ -168,6 +155,7 @@ class RectangularDuctDarcyWeisbach(Component):
         self,
         name: str,
         network: Network,
+        mass_flow: State,
         upstream_pressure: State,
         downstream_pressure: State,
         length: float,
@@ -175,7 +163,6 @@ class RectangularDuctDarcyWeisbach(Component):
         width: float,
         density: State,
         friction_factor: State | float | None = None,
-        mass_flow: State | float | None = None,
         effective_area: State | None = None,
     ):
         self.setup()
@@ -185,13 +172,6 @@ class RectangularDuctDarcyWeisbach(Component):
         self.hydraulic_diameter = State()
         self.update_geometry()
 
-    def pre_evaluation(self):
-        if not self.mass_flow.is_assigned:
-            self.mass_flow.value = initial_mass_flow_guess(
-                self.upstream_pressure.value - self.downstream_pressure.value,
-                self.density.value,
-                self.cross_sectional_area.value,
-            )
 
     def update_geometry(self):
         height = self.height.value
@@ -237,6 +217,7 @@ class EllipticalDuctDarcyWeisbach(Component):
         self,
         name: str,
         network: Network,
+        mass_flow: State,
         upstream_pressure: State,
         downstream_pressure: State,
         length: float,
@@ -244,7 +225,6 @@ class EllipticalDuctDarcyWeisbach(Component):
         semi_minor_axis: float,
         density: State,
         friction_factor: State | float | None = None,
-        mass_flow: State | float | None = None,
         effective_area: State | None = None,
     ):
         self.setup()
@@ -254,13 +234,6 @@ class EllipticalDuctDarcyWeisbach(Component):
         self.hydraulic_diameter = State()
         self.update_geometry()
 
-    def pre_evaluation(self):
-        if not self.mass_flow.is_assigned:
-            self.mass_flow.value = initial_mass_flow_guess(
-                self.upstream_pressure.value - self.downstream_pressure.value,
-                self.density.value,
-                self.cross_sectional_area.value,
-            )
 
     def update_geometry(self):
         a = self.semi_major_axis.value
@@ -331,28 +304,6 @@ def predicted_darcy_mass_flow(
     )
 
     return math.copysign(math.sqrt(abs(pressure_drop) / Kf), pressure_drop)
-
-
-
-
-def initial_mass_flow_guess(
-    pressure_drop: float,
-    density: float,
-    area: float,
-) -> float:
-    if abs(pressure_drop) < 1e-12:
-        return 0.0
-
-    if density <= 0.0:
-        raise ValueError("density must be positive.")
-
-    if area <= 0.0:
-        raise ValueError("area must be positive.")
-
-    return math.copysign(
-        area * math.sqrt(2.0 * density * abs(pressure_drop)),
-        pressure_drop,
-    )
 
 
 
