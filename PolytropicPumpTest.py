@@ -220,6 +220,7 @@ FuelTank = PressurizedTank(
     ullage_temperature=FuelUllageGas.temperature,
     liquid_temperature=FuelTankFluid.temperature,
     mass_flow_in=FuelBangBang.mass_flow,
+    mass_flow_out=State((2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
 )
 
 OxTank = PressurizedTank(
@@ -232,6 +233,7 @@ OxTank = PressurizedTank(
     ullage_temperature=OxUllageGas.temperature,
     liquid_temperature=OxTankFluid.temperature,
     mass_flow_in=OxBangBang.mass_flow,
+    mass_flow_out=State(2.2 * (2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
 )
 
 OxGravitydP = GravityPressureChange(
@@ -246,13 +248,14 @@ OxGravitydP = GravityPressureChange(
 FuelRunline = GenericDarcyWeisbach(
     "Fuel Main Line",
     PumpNetwork,
-    upstream_pressure=State(), # test to see if gravity could go after Darcy
+    upstream_pressure=State(),
     downstream_pressure=FuelPumpInletFluid.pressure,
     length=0.5,
     cross_sectional_area=np.pi / 4 * (0.5 * IN_TO_M)**2,
     hydraulic_diameter=0.5 * IN_TO_M,
     density=FuelTank.liquid_density,
     mass_flow=FuelTank.mass_flow_out,
+    friction_factor=State(0.02),
 )
 
 
@@ -288,6 +291,7 @@ OxRunline = GenericDarcyWeisbach(
     hydraulic_diameter=0.5 * IN_TO_M,
     density=OxTank.liquid_density,
     mass_flow=OxTank.mass_flow_out,
+    friction_factor=State(0.02),
 )
 
 OxRunlineFriction = Colebrook(
@@ -397,6 +401,7 @@ FuelPumpOutlet = SimpleVolume(
     temperature=FuelPumpDischargeFluid.temperature,
     density=FuelPumpDischargeFluid.density,
     mass_flow_in=FuelEPump.mass_flow,
+    mass_flow_out=State((2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
     enthalpy_in=FuelEPump.discharge_total_enthalpy,
 )
 
@@ -410,6 +415,7 @@ OxPumpOutlet = SimpleVolume(
     temperature=OxPumpDischargeFluid.temperature,
     density=OxPumpDischargeFluid.density,
     mass_flow_in=OxEPump.mass_flow,
+    mass_flow_out=State(2.2 * (2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
     enthalpy_in=OxEPump.discharge_total_enthalpy,
 )
 
@@ -447,6 +453,7 @@ FuelInjectorInletLine = GenericDarcyWeisbach(
     hydraulic_diameter=0.5 * IN_TO_M,
     density=FuelPumpOutlet.density,
     mass_flow=FuelPumpOutlet.mass_flow_out,
+    friction_factor=State(0.02),
 )
 
 FuelInjectorInletFriction = Colebrook(
@@ -471,6 +478,7 @@ OxInjectorInletLine = GenericDarcyWeisbach(
     hydraulic_diameter=0.5 * IN_TO_M,
     density=OxPumpOutlet.density,
     mass_flow=OxPumpOutlet.mass_flow_out,
+    friction_factor=State(0.02),
 )
 
 OxInjectorInletFriction = Colebrook(
