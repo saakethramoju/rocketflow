@@ -10,7 +10,10 @@ if TYPE_CHECKING:
     from System import Network
 
 class Colebrook(Component):
-
+    """
+    Poiseuille number input is only
+    for incompresible flow.
+    """
     def __init__(
         self,
         name: str,
@@ -67,7 +70,10 @@ class Colebrook(Component):
 
 
 class Churchill(Component):
-
+    """
+    Poiseuille number input is only
+    for incompresible flow.
+    """
     def __init__(
         self,
         name: str,

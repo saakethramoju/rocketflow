@@ -52,6 +52,17 @@ class IdealGas:
         "steam": "ig.H2O",
     }
 
+    _SUTHERLAND_VISCOSITY = {
+        "ig.air": {"mu0": 1.716e-5, "T0": 273.0, "S": 111.0},
+        "ig.Ar": {"mu0": 2.125e-5, "T0": 273.0, "S": 114.0},
+        "ig.CO2": {"mu0": 1.370e-5, "T0": 273.0, "S": 222.0},
+        "ig.CO": {"mu0": 1.657e-5, "T0": 273.0, "S": 136.0},
+        "ig.N2": {"mu0": 1.663e-5, "T0": 273.0, "S": 107.0},
+        "ig.O2": {"mu0": 1.919e-5, "T0": 273.0, "S": 139.0},
+        "ig.H2": {"mu0": 8.411e-6, "T0": 273.0, "S": 97.0},
+        "ig.H2O": {"mu0": 1.12e-5, "T0": 350.0, "S": 1064.0},
+    }
+
     _RU = 8.31446261815324  # J/mol-K
 
     def __init__(
@@ -600,6 +611,45 @@ class IdealGas:
     @property
     def speed_of_sound(self) -> float:
         return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self._temperature))
+        
+
+    @property
+    def dynamic_viscosity(self) -> float:
+        """
+        Dynamic viscosity [Pa-s] from Sutherland's law.
+
+        Only available for gases listed in _SUTHERLAND_VISCOSITY.
+        Mixture viscosity is not currently supported.
+        """
+        if self._mixture:
+            raise NotImplementedError(
+                "Sutherland viscosity is currently only supported for pure gases."
+            )
+
+        species_id = self._species_ids[0]
+
+        if species_id not in self._SUTHERLAND_VISCOSITY:
+            raise NotImplementedError(
+                f"Sutherland viscosity is not available for {species_id}. "
+                "Add its mu0, T0, and S constants to _SUTHERLAND_VISCOSITY."
+            )
+
+        data = self._SUTHERLAND_VISCOSITY[species_id]
+
+        mu0 = data["mu0"]
+        T0 = data["T0"]
+        S = data["S"]
+        T = self.temperature
+
+        return mu0 * (T / T0) ** 1.5 * (T0 + S) / (T + S)
+
+
+    @property
+    def kinematic_viscosity(self) -> float:
+        """
+        Kinematic viscosity [m^2/s].
+        """
+        return self.dynamic_viscosity / self.density
 
     @property
     def minimum_pressure(self) -> float:
