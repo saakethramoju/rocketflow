@@ -58,22 +58,21 @@ class IsothermalIncompressibleVolume(Component):
 
 
 class SimpleVolume(Component):
-    """
-    Assume the flow leaving has total enthalpy
-    and not static. Same with inlet flow.
-    """
+
     def __init__(self,
                  name:str,
                  network: Network,
                  pressure: State,
                  enthalpy: State,
                  volume: float,
+                 total_enthalpy_in: State,
+                 total_enthalpy_out: State | None = None,
                  temperature: State | None = None,
                  density: State | None = None,
                  internal_energy: State | None = None,
                  mass_flow_in: State | None = None,
-                 mass_flow_out: State | None = None,
-                 enthalpy_in: State | None = None,):
+                 mass_flow_out: State | None = None
+                 ):
         
         self.setup()
     
@@ -83,8 +82,11 @@ class SimpleVolume(Component):
 
     @property
     def residuals(self) -> list[float]:
+        if not self.total_enthalpy_out.is_assigned:
+            self.total_enthalpy_out = self.enthalpy
         return [self.mass_flow_in.value - self.mass_flow_out.value,
-                (self.mass_flow_in.value * self.enthalpy_in.value) - (self.mass_flow_out.value * self.enthalpy.value)]
+                (self.mass_flow_in.value * self.total_enthalpy_in.value) - 
+                (self.mass_flow_out.value * self.total_enthalpy_out.value)]
 
 
 
@@ -99,13 +101,16 @@ class SimpleFlowSplitter(Component):
                  pressure: State,
                  enthalpy: State,
                  volume: float,
+                 total_enthalpy_in: State,
+                 total_enthalpy_out1: State | None = None,
+                 total_enthalpy_out2: State | None = None,
                  temperature: State | None = None,
                  density: State | None = None,
                  internal_energy: State | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out1: State | None = None,
-                 mass_flow_out2: State | None = None,
-                 enthalpy_in: State | None = None,):
+                 mass_flow_out2: State | None = None
+                 ):
         
         self.setup()
     
@@ -115,7 +120,14 @@ class SimpleFlowSplitter(Component):
 
     @property
     def residuals(self) -> list[float]:
-        energy_out = (self.mass_flow_out1.value * self.enthalpy.value) + (self.mass_flow_out2.value * self.enthalpy.value)
+        if not self.total_enthalpy_out1.is_assigned:
+            self.total_enthalpy_out1 = self.enthalpy
+
+        if not self.total_enthalpy_out2.is_assigned:
+            self.total_enthalpy_out2 = self.enthalpy
+
+        energy_out = ((self.mass_flow_out1.value * self.total_enthalpy_out1.value) 
+                      + (self.mass_flow_out2.value * self.total_enthalpy_out2.value))
         return [self.mass_flow_in.value - (self.mass_flow_out1.value + self.mass_flow_out2.value),
-                (self.mass_flow_in.value * self.enthalpy_in.value) - energy_out]
+                (self.mass_flow_in.value * self.total_enthalpy_in.value) - energy_out]
     

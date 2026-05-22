@@ -402,7 +402,7 @@ FuelPumpOutlet = SimpleVolume(
     density=FuelPumpDischargeFluid.density,
     mass_flow_in=FuelEPump.mass_flow,
     mass_flow_out=State((2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
-    enthalpy_in=FuelEPump.discharge_total_enthalpy,
+    total_enthalpy_in=FuelEPump.discharge_total_enthalpy,
 )
 
 
@@ -416,7 +416,7 @@ OxPumpOutlet = SimpleVolume(
     density=OxPumpDischargeFluid.density,
     mass_flow_in=OxEPump.mass_flow,
     mass_flow_out=State(2.2 * (2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
-    enthalpy_in=OxEPump.discharge_total_enthalpy,
+    total_enthalpy_in=OxEPump.discharge_total_enthalpy,
 )
 
 '''
@@ -502,7 +502,7 @@ FuelManifold = SimpleVolume(
     temperature=FuelManifoldFluid.temperature,
     density=FuelManifoldFluid.density,
     mass_flow_in=FuelInjectorInletLine.mass_flow,
-    enthalpy_in=FuelPumpOutlet.enthalpy,
+    total_enthalpy_in=FuelPumpOutlet.enthalpy,
 )
 
 OxManifold = SimpleVolume(
@@ -514,7 +514,7 @@ OxManifold = SimpleVolume(
     temperature=OxManifoldFluid.temperature,
     density=OxManifoldFluid.density,
     mass_flow_in=OxInjectorInletLine.mass_flow,
-    enthalpy_in=OxPumpOutlet.enthalpy,
+    total_enthalpy_in=OxPumpOutlet.enthalpy,
 )
 
 FuelInjector = DischargeCoefficient(
