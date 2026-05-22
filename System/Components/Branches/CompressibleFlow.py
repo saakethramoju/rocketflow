@@ -64,6 +64,90 @@ class IsentropicCompressibleOrifice(Component):
 
 
 
+class FannoFlow(Component):
+    """
+    Assumptions
+    -----------
+    1) Forward flow only
+    2) Constant friction factor
+    3) Ideal gas
+    4) Circular duct
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        mass_flow: State,
+        upstream_density: State,
+        upstream_speed_of_sound: State,
+        upstream_specific_heat_ratio: State,
+        downstream_density: State,
+        downstream_speed_of_sound: State,
+        length: float,
+        inner_diameter: float,
+        friction_factor: State | None = None,
+        mass_flux: State | None = None,
+        upstream_mach_number: State | None = None,
+        downstream_mach_number: State | None = None,
+        upstream_static_enthalpy: State | None = None,
+        stagnation_enthalpy: State | None = None
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        mdot = self.mass_flow.value
+        f = self.friction_factor.value
+        L = self.length.value
+        D = self.inner_diameter.value
+        A = (np.pi / 4.0) * D**2
+
+        G = mdot / A
+        self.mass_flux.value = G
+
+        if mdot <= 0.0:
+            self.upstream_mach_number.value = 0.0
+            self.downstream_mach_number.value = 0.0
+            self._fL_D_residual = mdot
+            return
+
+        rho_in = self.upstream_density.value
+        a_in = self.upstream_speed_of_sound.value
+        k = self.upstream_specific_heat_ratio.value
+        rho_out = self.downstream_density.value
+        a_out = self.downstream_speed_of_sound.value
+
+        M1 = G / (rho_in * a_in)
+        M2_raw = G / (rho_out * a_out)
+
+        self.upstream_mach_number.value = M1
+        self.downstream_mach_number.value = min(M2_raw, 1.0)
+
+        M2 = min(M2_raw, 1.0 - 1e-10)
+
+        fL_D1 = (1.0 - M1**2) / (k * M1**2) + (k + 1.0) / (2.0 * k) * np.log(((k + 1.0) * M1**2) / (2.0 + (k - 1.0) * M1**2))
+        fL_D2 = (1.0 - M2**2) / (k * M2**2) + (k + 1.0) / (2.0 * k) * np.log(((k + 1.0) * M2**2) / (2.0 + (k - 1.0) * M2**2))
+
+        self._fL_D_residual = (fL_D1 - fL_D2) - f * L / D
+
+        if self.upstream_static_enthalpy.is_assigned:
+            h1 = self.upstream_static_enthalpy.value
+            v1 = M1 * a_in
+            self.stagnation_enthalpy = h1 + 0.5*(v1**2)
+
+
+    @property
+    def iteration_variables(self) -> list[State]:
+        return [self.mass_flow]
+
+    @property
+    def residuals(self) -> list[float]:
+        fL_D_actual = self.friction_factor.value * self.length.value / self.inner_diameter.value
+        scale = max(abs(fL_D_actual), 1.0)
+        return [self._fL_D_residual / scale]
+    
+
+'''
 
 class FannoFlow(Component):
     """
@@ -111,7 +195,6 @@ class FannoFlow(Component):
             rho_in = self.upstream_density.value
             a_in = self.upstream_speed_of_sound.value
             k = self.upstream_specific_heat_ratio.value
-            flow_direction = "forward"
 
             Pout = self.downstream_pressure.value
             rho_out = self.downstream_density.value
@@ -121,7 +204,6 @@ class FannoFlow(Component):
             rho_in = self.downstream_density.value
             a_in = self.downstream_speed_of_sound.value
             k = self.downstream_specific_heat_ratio.value
-            flow_direction = "reverse"
 
             Pout = self.upstream_pressure.value
             rho_out = self.upstream_density.value
@@ -129,11 +211,12 @@ class FannoFlow(Component):
 
 
 
-        M1 = np.abs(G)/(rho_in * a_in)
-        M2 = np.abs(G)/(rho_out * a_out)
-
+        M1 = np.abs(G) / (rho_in * a_in)
         self.upstream_mach_number.value = M1
+        M2_raw = np.abs(G) / (rho_out * a_out)
+        M2 = min(M2_raw, 1.0)
         self.downstream_mach_number.value = M2
+        M2 = min(M2_raw, 1.0 - 1e-10)
 
         fL_D1 = (1.0 - M1**2) / (k * M1**2) + (k + 1.0) / (2.0 * k) * np.log(((k + 1.0) * M1**2) / (2.0 + (k - 1.0) * M1**2))
         fL_D2 = (1.0 - M2**2) / (k * M2**2) + (k + 1.0) / (2.0 * k) * np.log(((k + 1.0) * M2**2) / (2.0 + (k - 1.0) * M2**2))
@@ -146,7 +229,11 @@ class FannoFlow(Component):
     @property
     def iteration_variables(self) -> list[State]:
         return [self.mass_flow]
-
+        
     @property
     def residuals(self) -> list[float]:
-        return [self._fL_D_residual]
+        fL_D_actual = self.friction_factor.value * self.length.value / self.inner_diameter.value
+        scale = max(abs(fL_D_actual), 1.0)
+        return [self._fL_D_residual / scale]
+
+'''

@@ -13,7 +13,7 @@ Source = IdealGasLookup(
             temperature=300,
         )
 
-Drain = IdealGasLookup(
+ManifoldGas = IdealGasLookup(
     "atmosphere",
     FFNetwork,
     'gn2',
@@ -32,17 +32,15 @@ mdot_0 = 0.5*rho*a*area
 Tube = FannoFlow("Fanno Tube",
                  FFNetwork,
                  mass_flow=mdot_0.value,
-                 upstream_pressure=Source.pressure,
                  upstream_density=Source.density,
                  upstream_speed_of_sound=Source.speed_of_sound,
                  upstream_specific_heat_ratio=Source.specific_heat_ratio,
-                 downstream_pressure=Drain.pressure,
-                 downstream_density=Drain.density,
-                 downstream_speed_of_sound=Drain.speed_of_sound,
-                 downstream_specific_heat_ratio=Drain.specific_heat_ratio,
+                 downstream_density=ManifoldGas.density,
+                 downstream_speed_of_sound=ManifoldGas.speed_of_sound,
                  length=3207 * IN_TO_M,
                  inner_diameter=6 * IN_TO_M,
-                 friction_factor=0.02)
+                 friction_factor=0.02,
+                 upstream_static_enthalpy=Source.enthalpy)
 
 
 TubeFriction = Churchill("Tube Fanno Friction",
