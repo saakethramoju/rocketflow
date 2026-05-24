@@ -45,7 +45,9 @@ Tube = CompressibleFlowTube(
 
     upstream_static_enthalpy=SourceGas.enthalpy,
     upstream_speed_of_sound=SourceGas.speed_of_sound,
-    downstream_speed_of_sound=ManifoldGas.speed_of_sound
+    downstream_speed_of_sound=ManifoldGas.speed_of_sound,
+
+    choked=True
 )
 
 '''

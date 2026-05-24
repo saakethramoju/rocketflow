@@ -75,7 +75,7 @@ class Colebrook(Component):
 
         if Re_Dh <= self.reynolds_number_threshold.value:
             f_predicted = 4.0 * Po / Re_Dh
-            return [self.log_friction_factor.value - np.log(f_predicted)]
+            return [self.friction_factor.value - f_predicted]
 
         Deff = 16.0 * Dh / Po
         Re_eff = max(mdot * Deff / (mu * A), 1e-12)
