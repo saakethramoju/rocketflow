@@ -331,9 +331,97 @@ class ChokedFannoFlow(Component):
 
 
 
-class SubsonicFannoFlow(Component):
 
-    def __init__(self, 
-                 name: str, 
-                 network: Network):
+
+
+class UnchokedFannoFlow(Component):
+    """
+    Make sure to use reasonable lengths
+    and diameters. A short tube can't significantly 
+    reduce total pressure, and neither can a large 
+    diameter. Make sure to also choose reasonable 
+    friction factors if manually inputted. Otherwise,
+    it's usually best to allow the downstream nodes
+    values and friction factor be iterated.
+    """
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        upstream_density: State,
+        upstream_speed_of_sound: State,
+        downstream_density: State,
+        downstream_speed_of_sound: State,
+        specific_heat_ratio: State,
+        friction_factor: State,
+        length: float,
+        inner_diameter: float,
+        upstream_static_enthalpy: State | None = None,
+        mass_flux: State | None = None,
+        mass_flow: State | None = None,
+        upstream_mach_number: State | None = None,
+        downstream_mach_number: State | None = None,
+        total_enthalpy: State | None = None,
+    ):
         self.setup()
+
+        self._eps = 1e-8
+        M1_guess = 0.2
+        self._z = State(np.log(M1_guess / (1.0 - M1_guess)))
+
+    def evaluate_states(self):
+        M1 = self._eps + (1.0 - 2.0 * self._eps) / (1.0 + np.exp(-self._z.value))
+
+        rho1 = self.upstream_density.value
+        a1 = self.upstream_speed_of_sound.value
+        rho2 = self.downstream_density.value
+        a2 = self.downstream_speed_of_sound.value
+        k = self.specific_heat_ratio.value
+        f = self.friction_factor.value
+        L = self.length.value
+        D = self.inner_diameter.value
+        A = np.pi / 4.0 * D**2
+
+        M2 = M1 * (rho1 * a1) / (rho2 * a2)
+
+        if M2 >= 1.0:
+            self._residual = 1e6 + 1e6 * (M2 - 1.0)
+            self.mass_flux.value = rho1 * a1 * M1
+            self.mass_flow.value = self.mass_flux.value * A
+            self.upstream_mach_number.value = M1
+            self.downstream_mach_number.value = M2
+            return
+
+        fL_D_actual = f * L / D
+        fL_D_predicted = self._fanno_function(M1, k) - self._fanno_function(M2, k)
+
+        self._residual = fL_D_predicted - fL_D_actual
+
+        G = rho1 * a1 * M1
+        mdot = G * A
+
+        self.mass_flux.value = G
+        self.mass_flow.value = mdot
+        self.upstream_mach_number.value = M1
+        self.downstream_mach_number.value = M2
+
+        if self.upstream_static_enthalpy.is_assigned:
+            h1 = self.upstream_static_enthalpy.value
+            v1 = M1 * a1
+            h0 = h1 + 0.5 * v1**2
+            self.total_enthalpy.value = h0
+
+    @property
+    def iteration_variables(self):
+        return [self._z]
+
+    @property
+    def residuals(self):
+        return [self._residual]
+    
+    def _fanno_function(self, M: float, k: float) -> float:
+        return (
+            (1.0 - M**2) / (k * M**2)
+            + (k + 1.0) / (2.0 * k)
+            * np.log(((k + 1.0) * M**2) / (2.0 + (k - 1.0) * M**2))
+        )

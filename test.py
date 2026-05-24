@@ -11,23 +11,24 @@ SourceGas = IdealGasLookup(
     FFNetwork,
     "gn2",
     pressure=50 * PSIA_TO_PA,
-    temperature=300,
+    temperature=3000,
 )
 
 ManifoldGas = IdealGasLookup(
     "Manifold gas",
     FFNetwork,
     "gn2",
-    pressure=23.4 * PSIA_TO_PA,
-    temperature=288.706,
+    pressure=50 * PSIA_TO_PA,
+    temperature=3000,
     flash_values=("pressure", "enthalpy")
 )
 
-L = 10 * IN_TO_M
-D = 6 * IN_TO_M
+
+L = 6 * IN_TO_M
+D = 2.875 * IN_TO_M
 area = np.pi / 4 * D**2
 
-
+'''
 Tube = ChokedFannoFlow(
     "Fanno Tube",
     FFNetwork,
@@ -41,7 +42,22 @@ Tube = ChokedFannoFlow(
     upstream_static_enthalpy=SourceGas.enthalpy,
 
 )
+'''
 
+
+Tube = UnchokedFannoFlow(
+    "Tube",
+    FFNetwork,
+    upstream_density=SourceGas.density,
+    upstream_speed_of_sound=SourceGas.speed_of_sound,
+    downstream_density=ManifoldGas.density,
+    downstream_speed_of_sound=ManifoldGas.speed_of_sound,
+    specific_heat_ratio=SourceGas.specific_heat_ratio,
+    friction_factor=0.002,
+    length=L,
+    inner_diameter=D,
+    upstream_static_enthalpy=SourceGas.enthalpy
+)
 
 
 TubeFriction = Churchill(
@@ -83,14 +99,18 @@ Nozzle = IsentropicAreaChange(
     gas_constant=ManifoldGas.gas_constant,
     specific_heat_ratio=ManifoldGas.specific_heat_ratio,
     upstream_area=area,
-    downstream_area=2*area,
+    downstream_area=1.1*area,
     mass_flow=Manifold.mass_flow_out,
     total_enthalpy=Manifold.total_enthalpy_out,
     exit_mach_regime='supersonic'
 )
 
-
-
+'''
+PeBalance = Balance("Exit Pressure Balance",
+                    FFNetwork,
+                    variable=Tube.length,
+                    function=Nozzle.downstream_static_pressure - 2*PSIA_TO_PA)
+'''
 
 solution = SteadyState(FFNetwork).solve(
     return_type="dataframe",
