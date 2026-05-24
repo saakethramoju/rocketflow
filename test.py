@@ -20,9 +20,10 @@ ManifoldGas = IdealGasLookup(
     "gn2",
     pressure=23.4 * PSIA_TO_PA,
     temperature=288.706,
+    flash_values=("pressure", "enthalpy")
 )
 
-L = 3207 * IN_TO_M
+L = 10 * IN_TO_M
 D = 6 * IN_TO_M
 area = np.pi / 4 * D**2
 
@@ -36,6 +37,9 @@ Tube = ChokedFannoFlow(
     friction_factor=0.002,
     length=L,
     inner_diameter=D,
+    regime="subsonic",
+    upstream_static_enthalpy=SourceGas.enthalpy,
+
 )
 
 
@@ -52,24 +56,15 @@ TubeFriction = Churchill(
 )
 
 
-solution = SteadyState(FFNetwork).solve(
-    return_type="dataframe",
-    verbose=True,
-    static=False,
-)
 
-print(solution.to_string(index=False))
-
-
-'''
-Manifold = SimpleVolume("Intermediate",
+Manifold = Volume("Intermediate",
                         FFNetwork,
                         pressure=ManifoldGas.pressure,
                         enthalpy=ManifoldGas.enthalpy,
                         volume=0.01,
                         total_enthalpy_in=Tube.total_enthalpy,
                         mass_flow_in=Tube.mass_flow)
-'''
+
 '''
 Manifold = IsothermalVolume("Intermediate",
                             FFNetwork,
@@ -77,18 +72,31 @@ Manifold = IsothermalVolume("Intermediate",
                             temperature=ManifoldGas.temperature,
                             volume=0.01,
                             mass_flow_in=Tube.mass_flow)
+'''
 
-po = Tube.downstream_to_upstream_total_pressure_ratio * SourceGas.pressure
+k = ManifoldGas.specific_heat_ratio
+Po = ManifoldGas.pressure * (1 + (k-1)/2)**(k/(k-1))
+To = ManifoldGas.temperature * (1 + (k-1)/2)
 
 Orifice = IsentropicCompressibleOrifice("Orifice",
                                         FFNetwork,
-                                        upstream_total_pressure=po,
-                                        upstream_total_temperature=ManifoldGas.temperature,
-                                        downstream_pressure=23.4 * PSIA_TO_PA,
+                                        upstream_total_pressure=Po,
+                                        upstream_total_temperature=To,
+                                        downstream_pressure=101325,
                                         discharge_coefficient=1,
                                         cross_sectional_area=(np.pi/4)*(1*IN_TO_M)**2,
                                         specific_gas_constant=ManifoldGas.gas_constant,
                                         specific_heat_ratio=ManifoldGas.specific_heat_ratio,
-                                        mass_flow=Manifold.mass_flow_out)
-'''
+                                        mass_flow=Manifold.mass_flow_out,
+                                        total_enthalpy=Manifold.total_enthalpy_out)
 
+
+
+
+solution = SteadyState(FFNetwork).solve(
+    return_type="dataframe",
+    verbose=True,
+    static=False,
+)
+
+print(solution.to_string(index=False))

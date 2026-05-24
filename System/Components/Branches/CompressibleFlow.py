@@ -63,8 +63,9 @@ class IsentropicCompressibleOrifice(Component):
 
         self.mass_flow.value = sign * CdA * Po * flow_function
 
-        cp = g * R / (g - 1.0)
-        self.total_enthalpy.value = cp * To
+        if not self.total_enthalpy.is_assigned:
+            cp = g * R / (g - 1.0)
+            self.total_enthalpy.value = cp * To
 
 
 
@@ -74,10 +75,12 @@ class ChokedFannoFlow(Component):
     Assumptions
     -----------
     1) Forward flow only
-    2) Subsonic inlet branch
     3) Constant friction factor
     4) Ideal gas
     5) Circular duct
+
+    Supersonic flow tends to be biased towards shorter tubes,
+    larger diameters, or smaller friction factors.
     """
 
     def __init__(
@@ -93,8 +96,11 @@ class ChokedFannoFlow(Component):
 
         mass_flux: State | None = None,
         mass_flow: State | None = None,
+        upstream_static_enthalpy: State | None = None,
+        total_enthalpy: State | None = None,
         upstream_mach_number: State | None = None,
-        downstream_mach_number = 1.0
+        downstream_mach_number = 1.0,
+        regime = "subsonic"
     ):
         self.setup()
 
@@ -109,7 +115,7 @@ class ChokedFannoFlow(Component):
 
         fL_D = f * L / D
 
-        M1 = self._inverse_fanno_function(fL_D, k)
+        M1 = self._inverse_fanno_function(fL_D, k, self.regime)
 
         G = rho1 * M1 * a1
         mdot = G * A
@@ -117,6 +123,11 @@ class ChokedFannoFlow(Component):
         self.mass_flux.value = G
         self.mass_flow.value = mdot
         self.upstream_mach_number.value = M1
+
+        if self.upstream_static_enthalpy.is_assigned:
+            h1 = self.upstream_static_enthalpy.value
+            v1 = M1 * a1
+            self.total_enthalpy.value = h1 + 0.5*(v1**2)
 
 
 
@@ -152,3 +163,13 @@ class ChokedFannoFlow(Component):
         M = 1.0 / np.sqrt(x)
 
         return float(M)
+
+
+
+
+class SubsonicFannoFlow(Component):
+
+    def __init__(self, 
+                 name: str, 
+                 network: Network):
+        self.setup()
