@@ -11,68 +11,56 @@ SourceGas = IdealGasLookup(
     FFNetwork,
     "gn2",
     pressure=50 * PSIA_TO_PA,
-    temperature=3000,
+    temperature=299.817,
 )
 
 ManifoldGas = IdealGasLookup(
     "Manifold gas",
     FFNetwork,
     "gn2",
-    pressure=50 * PSIA_TO_PA,
-    temperature=3000,
+    pressure=23.4 * PSIA_TO_PA,
+    temperature=288.706,
     flash_values=("pressure", "enthalpy")
 )
 
 
-L = 6 * IN_TO_M
-D = 2.875 * IN_TO_M
-area = np.pi / 4 * D**2
-
-'''
-Tube = ChokedFannoFlow(
-    "Fanno Tube",
-    FFNetwork,
-    upstream_density=SourceGas.density,
-    upstream_speed_of_sound=SourceGas.speed_of_sound,
-    specific_heat_ratio=SourceGas.specific_heat_ratio,
-    friction_factor=0.002,
-    length=L,
-    inner_diameter=D,
-    regime="subsonic",
-    upstream_static_enthalpy=SourceGas.enthalpy,
-
-)
-'''
+L = 3207 * IN_TO_M
+D_pipe = 6 * IN_TO_M
+area = np.pi / 4 * D_pipe**2
 
 
-Tube = UnchokedFannoFlow(
+
+
+Tube = CompressibleFlowTube(
     "Tube",
     FFNetwork,
-    upstream_mach_number=0.2,
+    mass_flow=1, 
+    upstream_static_pressure=SourceGas.pressure,
     upstream_density=SourceGas.density,
-    upstream_speed_of_sound=SourceGas.speed_of_sound,
+    downstream_static_pressure=ManifoldGas.pressure,
     downstream_density=ManifoldGas.density,
-    downstream_speed_of_sound=ManifoldGas.speed_of_sound,
-    specific_heat_ratio=SourceGas.specific_heat_ratio,
     friction_factor=0.002,
     length=L,
-    inner_diameter=D,
-    upstream_static_enthalpy=SourceGas.enthalpy
+    inner_diameter=D_pipe,
+
+    upstream_static_enthalpy=SourceGas.enthalpy,
+    upstream_speed_of_sound=SourceGas.speed_of_sound,
+    downstream_speed_of_sound=ManifoldGas.speed_of_sound
 )
 
-
+'''
 TubeFriction = Churchill(
     "Tube Fanno Friction",
     FFNetwork,
     mass_flow=Tube.mass_flow,
     friction_factor=Tube.friction_factor,
-    hydraulic_diameter=D,
+    hydraulic_diameter=D_pipe,
     dynamic_viscosity=SourceGas.dynamic_viscosity,
     cross_sectional_area=area,
     roughness=1e-4,
 )
-
-
+'''
+'''
 
 Manifold = Volume("Intermediate",
                         FFNetwork,
@@ -116,9 +104,9 @@ F = mdot*Me*np.sqrt(k*R*Te) + (Pe - Pamb)*Ae
 PeBalance = Balance("Exit Pressure Balance",
                     FFNetwork,
                     variable=Tube.length,
-                    function=F - 60*LBF_TO_N,
-                    bounds=(0, None))
-
+                    function=F - 60*LBF_TO_N)
+                    #bounds=(0, None))
+'''
 
 solution = SteadyState(FFNetwork).solve(
     return_type="dataframe",
@@ -128,5 +116,5 @@ solution = SteadyState(FFNetwork).solve(
 
 print(solution.to_string(index=False))
 
-print(F.value * N_TO_LBF)
+#print(F.value * N_TO_LBF)
 print(Tube.length.value * M_TO_IN)

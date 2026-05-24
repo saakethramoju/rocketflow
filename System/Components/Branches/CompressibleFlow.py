@@ -351,98 +351,79 @@ class ChokedFannoFlow(Component):
 
 
 
+class CompressibleFlowTube(Component):
+    """
+    Explicit unchoked subsonic Fanno branch.
 
-class UnchokedFannoFlow(Component):
+    Given upstream state, downstream static pressure, friction factor,
+    length, and diameter, this component internally solves for the
+    upstream Mach number and then computes mass flow and downstream Mach.
+
+    This component does not add global solver residuals.
     """
-    Make sure to use reasonable lengths
-    and diameters. A short tube can't significantly 
-    reduce total pressure, and neither can a large 
-    diameter. Make sure to also choose reasonable 
-    friction factors if manually inputted. Otherwise,
-    it's usually best to allow the downstream nodes
-    values and friction factor be iterated.
-    """
+
     def __init__(
         self,
         name: str,
         network: Network,
-        upstream_mach_number: State,
+        mass_flow: State,
+        upstream_static_pressure: State,
         upstream_density: State,
-        upstream_speed_of_sound: State,
+        downstream_static_pressure: State,
         downstream_density: State,
-        downstream_speed_of_sound: State,
-        specific_heat_ratio: State,
-        friction_factor: State,
+        friction_factor: float,
         length: float,
         inner_diameter: float,
         upstream_static_enthalpy: State | None = None,
-        mass_flux: State | None = None,
-        mass_flow: State | None = None,
-        downstream_mach_number: State | None = None,
+        upstream_speed_of_sound: State | None = None,
+        downstream_speed_of_sound: State | None = None,
+
         total_enthalpy: State | None = None,
+        upstream_mach_number: State | None = None,
+        downstream_mach_number: State | None = None
     ):
         self.setup()
 
-        M1 = self.upstream_mach_number.value
-        if M1 == 1.0:
-            raise ValueError("Upstream Mach Number cannot be 1.0!")
-        elif M1 <= 0:
-            raise ValueError("Upstream Mach Number must be positive!")
-        elif M1 > 1.0:
-            raise ValueError("Upstream Mach Number must be subsonic!")
-
     def evaluate_states(self):
-        M1 = self.upstream_mach_number.value
+        mdot = self.mass_flow.value
+        p1 = self.upstream_static_pressure.value
         rho1 = self.upstream_density.value
-        a1 = self.upstream_speed_of_sound.value
+        h1 = self.upstream_static_enthalpy.value
+        p2 = self.downstream_static_pressure.value
         rho2 = self.downstream_density.value
-        a2 = self.downstream_speed_of_sound.value
-        k = self.specific_heat_ratio.value
         f = self.friction_factor.value
         L = self.length.value
         D = self.inner_diameter.value
-        A = np.pi / 4.0 * D**2
+        A = (np.pi/4) * (D**2)
 
-        M2 = M1 * (rho1 * a1) / (rho2 * a2)
-
-        if M2 >= 1.0:
-            self._residual = 1e6 + 1e6 * (M2 - 1.0)
-            self.mass_flux.value = rho1 * a1 * M1
-            self.mass_flow.value = self.mass_flux.value * A
-            self.upstream_mach_number.value = M1
-            self.downstream_mach_number.value = M2
-            return
-
-        fL_D_actual = f * L / D
-        fL_D_predicted = self._fanno_function(M1, k) - self._fanno_function(M2, k)
-
-        self._residual = fL_D_predicted - fL_D_actual
-
-        G = rho1 * a1 * M1
-        mdot = G * A
-
-        self.mass_flux.value = G
-        self.mass_flow.value = mdot
-        self.upstream_mach_number.value = M1
-        self.downstream_mach_number.value = M2
+        u1 = mdot / (rho1 * A)
+        u2 = mdot / (rho2 * A)
 
         if self.upstream_static_enthalpy.is_assigned:
             h1 = self.upstream_static_enthalpy.value
-            v1 = M1 * a1
-            h0 = h1 + 0.5 * v1**2
-            self.total_enthalpy.value = h0
+            self.total_enthalpy.value = h1 + 0.5*(u1**2)
+
+        if self.upstream_speed_of_sound.is_assigned:
+            a1 = self.upstream_speed_of_sound.value
+            self.upstream_mach_number.value = u1 / a1
+
+        if self.downstream_speed_of_sound.is_assigned:
+            a2 = self.downstream_speed_of_sound.value
+            self.downstream_mach_number.value = u2 / a2       
+
+        Kf = 8 * f * L / (rho1 * np.pi**2 * D**5)
+
+        inertia = max(mdot, 0.0) * (u2 - u1) - max(-mdot, 0.0) * (u1 - u2)
+        pressure = (p1 - p2) * A
+        friction = Kf * mdot * np.abs(mdot) * A
+
+        self._residual = pressure - friction - inertia
+
 
     @property
-    def iteration_variables(self):
-        return [self.upstream_mach_number]
-
-    @property
-    def residuals(self):
-        return [self._residual]
+    def iteration_variables(self) -> list[State]:
+        return [self.mass_flow]
     
-    def _fanno_function(self, M: float, k: float) -> float:
-        return (
-            (1.0 - M**2) / (k * M**2)
-            + (k + 1.0) / (2.0 * k)
-            * np.log(((k + 1.0) * M**2) / (2.0 + (k - 1.0) * M**2))
-        )
+    @property
+    def residuals(self) -> list[float]:
+        return [self._residual]
