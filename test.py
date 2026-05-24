@@ -74,21 +74,20 @@ Manifold = IsothermalVolume("Intermediate",
                             mass_flow_in=Tube.mass_flow)
 '''
 
-k = ManifoldGas.specific_heat_ratio
-Po = ManifoldGas.pressure * (1 + (k-1)/2)**(k/(k-1))
-To = ManifoldGas.temperature * (1 + (k-1)/2)
-
-Orifice = IsentropicCompressibleOrifice("Orifice",
-                                        FFNetwork,
-                                        upstream_total_pressure=Po,
-                                        upstream_total_temperature=To,
-                                        downstream_pressure=101325,
-                                        discharge_coefficient=1,
-                                        cross_sectional_area=(np.pi/4)*(1*IN_TO_M)**2,
-                                        specific_gas_constant=ManifoldGas.gas_constant,
-                                        specific_heat_ratio=ManifoldGas.specific_heat_ratio,
-                                        mass_flow=Manifold.mass_flow_out,
-                                        total_enthalpy=Manifold.total_enthalpy_out)
+Nozzle = IsentropicAreaChange(
+    "Nozzle",
+    FFNetwork,
+    upstream_mach_number=Tube.downstream_mach_number,
+    upstream_static_pressure=Manifold.pressure,
+    upstream_static_temperature=ManifoldGas.temperature,
+    gas_constant=ManifoldGas.gas_constant,
+    specific_heat_ratio=ManifoldGas.specific_heat_ratio,
+    upstream_area=area,
+    downstream_area=2*area,
+    mass_flow=Manifold.mass_flow_out,
+    total_enthalpy=Manifold.total_enthalpy_out,
+    exit_mach_regime='supersonic'
+)
 
 
 
