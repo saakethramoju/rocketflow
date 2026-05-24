@@ -69,4 +69,4 @@ class PressurizedTank(Component):
     def residuals(self) -> list[float]:
         return [self.mass_flow_in.value 
                 - self.collapse_factor.value * self.pressurant_density.value
-                * self.mass_flow_out.value / self.pressurant_density.value]
+                * self.mass_flow_out.value / self.liquid_density.value]

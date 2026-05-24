@@ -3,55 +3,53 @@ from Solvers import *
 
 from constants import *
 
+
 FFNetwork = Network("Fanno Flow")
 
-Source = IdealGasLookup(
-            "Fuel Tank Ullage Gas",
-            FFNetwork,
-            'gn2',
-            pressure=50 * PSIA_TO_PA,
-            temperature=300,
-        )
-
-ManifoldGas = IdealGasLookup(
-    "atmosphere",
+SourceGas = IdealGasLookup(
+    "Source Gas",
     FFNetwork,
-    'gn2',
-    pressure=23.4*PSIA_TO_PA,
-    temperature=300
+    "gn2",
+    pressure=50 * PSIA_TO_PA,
+    temperature=300,
 )
 
-a = Source.speed_of_sound
-rho = Source.density
-D = 6 *IN_TO_M
-area = np.pi/4 * (D)**2
+ManifoldGas = IdealGasLookup(
+    "Manifold gas",
+    FFNetwork,
+    "gn2",
+    pressure=23.4 * PSIA_TO_PA,
+    temperature=288.706,
+)
 
-mdot_0 = 0.5*rho*a*area
-
-
-Tube = FannoFlow("Fanno Tube",
-                 FFNetwork,
-                 mass_flow=mdot_0.value,
-                 upstream_density=Source.density,
-                 upstream_speed_of_sound=Source.speed_of_sound,
-                 upstream_specific_heat_ratio=Source.specific_heat_ratio,
-                 downstream_density=ManifoldGas.density,
-                 downstream_speed_of_sound=ManifoldGas.speed_of_sound,
-                 length=3207 * IN_TO_M,
-                 inner_diameter=6 * IN_TO_M,
-                 friction_factor=0.02,
-                 upstream_static_enthalpy=Source.enthalpy)
+L = 3207 * IN_TO_M
+D = 6 * IN_TO_M
+area = np.pi / 4 * D**2
 
 
-TubeFriction = Churchill("Tube Fanno Friction",
-                         FFNetwork,
-                         mass_flow=Tube.mass_flow,
-                         friction_factor=Tube.friction_factor,
-                         hydraulic_diameter=D,
-                         dynamic_viscosity=Source.dynamic_viscosity,
-                         cross_sectional_area=area,
-                         roughness=0.1e-4)
+Tube = ChokedFannoFlow(
+    "Fanno Tube",
+    FFNetwork,
+    upstream_density=SourceGas.density,
+    upstream_speed_of_sound=SourceGas.speed_of_sound,
+    specific_heat_ratio=SourceGas.specific_heat_ratio,
+    friction_factor=0.002,
+    length=L,
+    inner_diameter=D,
+)
 
+
+
+TubeFriction = Churchill(
+    "Tube Fanno Friction",
+    FFNetwork,
+    mass_flow=Tube.mass_flow,
+    friction_factor=Tube.friction_factor,
+    hydraulic_diameter=D,
+    dynamic_viscosity=SourceGas.dynamic_viscosity,
+    cross_sectional_area=area,
+    roughness=1e-4,
+)
 
 
 solution = SteadyState(FFNetwork).solve(
@@ -61,4 +59,36 @@ solution = SteadyState(FFNetwork).solve(
 )
 
 print(solution.to_string(index=False))
+
+
+'''
+Manifold = SimpleVolume("Intermediate",
+                        FFNetwork,
+                        pressure=ManifoldGas.pressure,
+                        enthalpy=ManifoldGas.enthalpy,
+                        volume=0.01,
+                        total_enthalpy_in=Tube.total_enthalpy,
+                        mass_flow_in=Tube.mass_flow)
+'''
+'''
+Manifold = IsothermalVolume("Intermediate",
+                            FFNetwork,
+                            pressure=ManifoldGas.pressure,
+                            temperature=ManifoldGas.temperature,
+                            volume=0.01,
+                            mass_flow_in=Tube.mass_flow)
+
+po = Tube.downstream_to_upstream_total_pressure_ratio * SourceGas.pressure
+
+Orifice = IsentropicCompressibleOrifice("Orifice",
+                                        FFNetwork,
+                                        upstream_total_pressure=po,
+                                        upstream_total_temperature=ManifoldGas.temperature,
+                                        downstream_pressure=23.4 * PSIA_TO_PA,
+                                        discharge_coefficient=1,
+                                        cross_sectional_area=(np.pi/4)*(1*IN_TO_M)**2,
+                                        specific_gas_constant=ManifoldGas.gas_constant,
+                                        specific_heat_ratio=ManifoldGas.specific_heat_ratio,
+                                        mass_flow=Manifold.mass_flow_out)
+'''
 

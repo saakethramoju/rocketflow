@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 
-class SimpleIncompressibleVolume(Component):
+class SimpleVolume(Component):
 
     def __init__(self,
                  name: str,
@@ -33,7 +33,7 @@ class SimpleIncompressibleVolume(Component):
         return [self.mass_flow_in.value - self.mass_flow_out.value]
 
 
-class IsothermalIncompressibleVolume(Component):
+class IsothermalVolume(Component):
 
     def __init__(self,
                  name:str,
@@ -57,7 +57,7 @@ class IsothermalIncompressibleVolume(Component):
         return [self.mass_flow_in.value - self.mass_flow_out.value]
 
 
-class SimpleVolume(Component):
+class Volume(Component):
 
     def __init__(self,
                  name:str,

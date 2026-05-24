@@ -306,7 +306,7 @@ OxRunlineFriction = Colebrook(
 )
 
 
-FuelPumpInlet = IsothermalIncompressibleVolume(
+FuelPumpInlet = IsothermalVolume(
     "Fuel Suction Inlet",
     PumpNetwork,
     pressure=FuelPumpInletFluid.pressure,
@@ -318,7 +318,7 @@ FuelPumpInlet = IsothermalIncompressibleVolume(
     volume=0.2 * IN3_TO_M3,
 )
 
-OxPumpInlet = IsothermalIncompressibleVolume(
+OxPumpInlet = IsothermalVolume(
     "Ox Suction Inlet",
     PumpNetwork,
     pressure=OxPumpInletFluid.pressure,
@@ -392,7 +392,7 @@ OxEPump = PolytropicPump(
     upstream_total_enthalpy=OxPumpInlet.enthalpy,
 )
 
-FuelPumpOutlet = SimpleVolume(
+FuelPumpOutlet = Volume(
     "Fuel Discharge Outlet",
     PumpNetwork,
     pressure=FuelPumpDischargeFluid.pressure,
@@ -406,7 +406,7 @@ FuelPumpOutlet = SimpleVolume(
 )
 
 
-OxPumpOutlet = SimpleVolume(
+OxPumpOutlet = Volume(
     "Ox Discharge Outlet",
     PumpNetwork,
     pressure=OxPumpDischargeFluid.pressure,
@@ -493,7 +493,7 @@ OxInjectorInletFriction = Colebrook(
 )
 
 
-FuelManifold = SimpleVolume(
+FuelManifold = Volume(
     "Fuel Injector Manifold",
     PumpNetwork,
     pressure=FuelManifoldFluid.pressure,
@@ -505,7 +505,7 @@ FuelManifold = SimpleVolume(
     total_enthalpy_in=FuelPumpOutlet.enthalpy,
 )
 
-OxManifold = SimpleVolume(
+OxManifold = Volume(
     "Ox Injector Manifold",
     PumpNetwork,
     pressure=OxManifoldFluid.pressure,

@@ -9,11 +9,13 @@ from System import Component, State
 if TYPE_CHECKING:
     from System import Network
 
+
+
 class Colebrook(Component):
     """
-    Poiseuille number input is only
-    for incompresible flow.
+    Poiseuille number input is only for incompressible flow.
     """
+
     def __init__(
         self,
         name: str,
@@ -31,14 +33,26 @@ class Colebrook(Component):
         self.setup()
 
         self.log_friction_factor = State(np.log(self.friction_factor.value))
-        self.Deff = 16*self.hydraulic_diameter.value / self.poiseuille_number.value
+        self.Deff = 16.0 * self.hydraulic_diameter.value / self.poiseuille_number.value
 
     def evaluate_states(self):
-        self.reynolds_number.value = (
-            abs(self.mass_flow.value)
-            * self.Deff
-            / (self.dynamic_viscosity.value * self.cross_sectional_area.value)
-        )
+        mdot = abs(self.mass_flow.value)
+        mu = self.dynamic_viscosity.value
+        A = self.cross_sectional_area.value
+        Dh = self.hydraulic_diameter.value
+        Po = self.poiseuille_number.value
+
+        Re_Dh = mdot * Dh / (mu * A)
+        Deff = 16.0 * Dh / Po
+        Re_eff = mdot * Deff / (mu * A)
+
+        self.Deff = Deff
+
+        if Re_Dh <= self.reynolds_number_threshold.value:
+            self.reynolds_number.value = Re_Dh
+        else:
+            self.reynolds_number.value = Re_eff
+
         self.friction_factor.value = np.exp(self.log_friction_factor.value)
 
     @property
@@ -47,24 +61,32 @@ class Colebrook(Component):
 
     @property
     def residuals(self):
-        f = self.friction_factor.value
-        Re = max(self.reynolds_number.value, 1e-12)
+        f = max(self.friction_factor.value, 1e-12)
+
+        mdot = abs(self.mass_flow.value)
+        mu = self.dynamic_viscosity.value
+        A = self.cross_sectional_area.value
+        Dh = self.hydraulic_diameter.value
         Po = self.poiseuille_number.value
-
-        if Re <= self.reynolds_number_threshold.value:
-            return [f - 64.0 / Re]
-
         eps = self.roughness.value
-        #Dh = self.hydraulic_diameter.value
+
+        Re_Dh = max(mdot * Dh / (mu * A), 1e-12)
+
+        if Re_Dh <= self.reynolds_number_threshold.value:
+            f_predicted = 4.0 * Po / Re_Dh
+            return [self.log_friction_factor.value - np.log(f_predicted)]
+
+        Deff = 16.0 * Dh / Po
+        Re_eff = max(mdot * Deff / (mu * A), 1e-12)
 
         return [
             1.0 / np.sqrt(f)
             + 2.0 * np.log10(
-                eps / (3.7 * self.Deff)
-                + 2.51 / (Re * np.sqrt(f))
+                eps / (3.7 * Deff)
+                + 2.51 / (Re_eff * np.sqrt(f))
             )
         ]
-    
+
 
 
 
@@ -94,6 +116,7 @@ class Churchill(Component):
         self.Deff = 16*self.hydraulic_diameter.value / self.poiseuille_number.value
 
     def evaluate_states(self):
+        self.Deff = 16 * self.hydraulic_diameter.value / self.poiseuille_number.value
         self.reynolds_number.value = (
             abs(self.mass_flow.value)
             * self.Deff
@@ -121,5 +144,5 @@ class Churchill(Component):
 
         return [self.friction_factor.value -8.0 * (
             (8.0 / Re) ** 12
-            + 1.0 / (A + B) ** 1.5
+            + (A + B) ** (-1.5)
         ) ** (1.0 / 12.0)]

@@ -68,176 +68,87 @@ class IsentropicCompressibleOrifice(Component):
 
 
 
-class FannoFlow(Component):
+
+class ChokedFannoFlow(Component):
     """
     Assumptions
     -----------
     1) Forward flow only
-    2) Constant friction factor
-    3) Ideal gas
-    4) Circular duct
+    2) Subsonic inlet branch
+    3) Constant friction factor
+    4) Ideal gas
+    5) Circular duct
     """
 
     def __init__(
         self,
         name: str,
         network: Network,
-        mass_flow: State,
         upstream_density: State,
         upstream_speed_of_sound: State,
-        upstream_specific_heat_ratio: State,
-        downstream_density: State,
-        downstream_speed_of_sound: State,
+        specific_heat_ratio: State,
+        friction_factor: State,
         length: float,
         inner_diameter: float,
-        friction_factor: State | None = None,
+
         mass_flux: State | None = None,
+        mass_flow: State | None = None,
         upstream_mach_number: State | None = None,
-        downstream_mach_number: State | None = None,
-        upstream_static_enthalpy: State | None = None,
-        total_enthalpy: State | None = None
+        downstream_mach_number = 1.0
     ):
         self.setup()
 
     def evaluate_states(self):
-        mdot = self.mass_flow.value
-        f = self.friction_factor.value
+        k = self.specific_heat_ratio.value
+        rho1 = self.upstream_density.value
+        a1 = self.upstream_speed_of_sound.value
         L = self.length.value
         D = self.inner_diameter.value
+        f = self.friction_factor.value
         A = (np.pi / 4.0) * D**2
 
-        G = mdot / A
+        fL_D = f * L / D
+
+        M1 = self._inverse_fanno_function(fL_D, k)
+
+        G = rho1 * M1 * a1
+        mdot = G * A
+
         self.mass_flux.value = G
-
-        if mdot <= 0.0:
-            self.upstream_mach_number.value = 0.0
-            self.downstream_mach_number.value = 0.0
-            self._fL_D_residual = mdot
-            return
-
-        rho_in = self.upstream_density.value
-        a_in = self.upstream_speed_of_sound.value
-        k = self.upstream_specific_heat_ratio.value
-        rho_out = self.downstream_density.value
-        a_out = self.downstream_speed_of_sound.value
-
-        M1 = G / (rho_in * a_in)
-        M2_raw = G / (rho_out * a_out)
-
+        self.mass_flow.value = mdot
         self.upstream_mach_number.value = M1
-        self.downstream_mach_number.value = min(M2_raw, 1.0)
-
-        M2 = min(M2_raw, 1.0 - 1e-10)
-
-        fL_D1 = (1.0 - M1**2) / (k * M1**2) + (k + 1.0) / (2.0 * k) * np.log(((k + 1.0) * M1**2) / (2.0 + (k - 1.0) * M1**2))
-        fL_D2 = (1.0 - M2**2) / (k * M2**2) + (k + 1.0) / (2.0 * k) * np.log(((k + 1.0) * M2**2) / (2.0 + (k - 1.0) * M2**2))
-
-        self._fL_D_residual = (fL_D1 - fL_D2) - f * L / D
-
-        if self.upstream_static_enthalpy.is_assigned:
-            h1 = self.upstream_static_enthalpy.value
-            v1 = M1 * a_in
-            self.total_enthalpy.value = h1 + 0.5*(v1**2)
 
 
-    @property
-    def iteration_variables(self) -> list[State]:
-        return [self.mass_flow]
 
-    @property
-    def residuals(self) -> list[float]:
-        fL_D_actual = self.friction_factor.value * self.length.value / self.inner_diameter.value
-        scale = max(abs(fL_D_actual), 1.0)
-        return [self._fL_D_residual / scale]
-    
+    def _fanno_function(self, M: float, k: float) -> float:
+        return (
+            (1.0 - M**2) / (k * M**2)
+            + (k + 1.0) / (2.0 * k)
+            * np.log(((k + 1.0) * M**2) / (2.0 + (k - 1.0) * M**2))
+        )
 
-'''
-
-class FannoFlow(Component):
-    """
-    Assumptions
-    -----------
-    1) Constant friction factor
-    2) Ideal gas
-    3) Circular duct
-    """
-
-    def __init__(
+    def _inverse_fanno_function(
         self,
-        name: str,
-        network: Network,
-        mass_flow: State,
-        upstream_pressure: State,
-        upstream_density: State,
-        upstream_speed_of_sound: State,
-        upstream_specific_heat_ratio: State,
-        downstream_pressure: State,
-        downstream_density: State,
-        downstream_speed_of_sound: State,
-        downstream_specific_heat_ratio: State,
-        length: float,
-        inner_diameter: float,
-        friction_factor: State | None = None,
-        mass_flux: State | None = None,
-        upstream_mach_number: State | None = None,
-        downstream_mach_number: State | None = None,
-    ):
-        self.setup()
+        target: float,
+        k: float,
+        branch: str = "subsonic",
+    ) -> float:
+        if target <= 0.0:
+            return 1.0
 
-    def evaluate_states(self):
-        mdot = self.mass_flow.value
-        f = self.friction_factor.value
-        L = self.length.value
-        D = self.inner_diameter.value
-        A = (np.pi / 4.0) * D**2
+        c = (k + 1.0) / 2.0
+        B = 1.0 + (k / c) * target
+        arg = -np.exp(-B)
 
-        G = mdot / A
-        self.mass_flux.value = G
-
-        if mdot >= 0.0:
-            Pin = self.upstream_pressure.value
-            rho_in = self.upstream_density.value
-            a_in = self.upstream_speed_of_sound.value
-            k = self.upstream_specific_heat_ratio.value
-
-            Pout = self.downstream_pressure.value
-            rho_out = self.downstream_density.value
-            a_out = self.downstream_speed_of_sound.value
+        if branch == "subsonic":
+            W = lambertw(arg, k=-1)
+        elif branch == "supersonic":
+            W = lambertw(arg, k=0)
         else:
-            Pin = self.downstream_pressure.value
-            rho_in = self.downstream_density.value
-            a_in = self.downstream_speed_of_sound.value
-            k = self.downstream_specific_heat_ratio.value
+            raise ValueError("branch must be 'subsonic' or 'supersonic'")
 
-            Pout = self.upstream_pressure.value
-            rho_out = self.upstream_density.value
-            a_out = self.upstream_speed_of_sound.value
+        u = -np.real(W)
+        x = c * u - (k - 1.0) / 2.0
+        M = 1.0 / np.sqrt(x)
 
-
-
-        M1 = np.abs(G) / (rho_in * a_in)
-        self.upstream_mach_number.value = M1
-        M2_raw = np.abs(G) / (rho_out * a_out)
-        M2 = min(M2_raw, 1.0)
-        self.downstream_mach_number.value = M2
-        M2 = min(M2_raw, 1.0 - 1e-10)
-
-        fL_D1 = (1.0 - M1**2) / (k * M1**2) + (k + 1.0) / (2.0 * k) * np.log(((k + 1.0) * M1**2) / (2.0 + (k - 1.0) * M1**2))
-        fL_D2 = (1.0 - M2**2) / (k * M2**2) + (k + 1.0) / (2.0 * k) * np.log(((k + 1.0) * M2**2) / (2.0 + (k - 1.0) * M2**2))
-
-        fL_D_pred = fL_D1 - fL_D2
-        fL_D_actual = f*L/D
-
-        self._fL_D_residual = fL_D_pred - fL_D_actual
-        
-    @property
-    def iteration_variables(self) -> list[State]:
-        return [self.mass_flow]
-        
-    @property
-    def residuals(self) -> list[float]:
-        fL_D_actual = self.friction_factor.value * self.length.value / self.inner_diameter.value
-        scale = max(abs(fL_D_actual), 1.0)
-        return [self._fL_D_residual / scale]
-
-'''
+        return float(M)
