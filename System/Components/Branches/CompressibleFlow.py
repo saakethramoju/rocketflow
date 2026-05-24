@@ -348,6 +348,7 @@ class UnchokedFannoFlow(Component):
         self,
         name: str,
         network: Network,
+        upstream_mach_number: State,
         upstream_density: State,
         upstream_speed_of_sound: State,
         downstream_density: State,
@@ -359,15 +360,19 @@ class UnchokedFannoFlow(Component):
         upstream_static_enthalpy: State | None = None,
         mass_flux: State | None = None,
         mass_flow: State | None = None,
-        upstream_mach_number: State | None = None,
         downstream_mach_number: State | None = None,
         total_enthalpy: State | None = None,
+        regime: str = "subsonic",
     ):
         self.setup()
 
         self._eps = 1e-8
-        M1_guess = 0.2
-        self._z = State(np.log(M1_guess / (1.0 - M1_guess)))
+        M1 = self.upstream_mach_number.value
+        if M1 == 1.0:
+            raise ValueError("Upstream Mach Number cannot be 1.0!")
+        elif M1 <= 0:
+            raise ValueError("Upstream Mach Number must be positive!")
+        self._z = State(np.log(M1 / (1.0 - M1)))
 
     def evaluate_states(self):
         M1 = self._eps + (1.0 - 2.0 * self._eps) / (1.0 + np.exp(-self._z.value))

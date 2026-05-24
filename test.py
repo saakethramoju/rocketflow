@@ -48,6 +48,7 @@ Tube = ChokedFannoFlow(
 Tube = UnchokedFannoFlow(
     "Tube",
     FFNetwork,
+    upstream_mach_number=0.2,
     upstream_density=SourceGas.density,
     upstream_speed_of_sound=SourceGas.speed_of_sound,
     downstream_density=ManifoldGas.density,
@@ -81,14 +82,6 @@ Manifold = Volume("Intermediate",
                         total_enthalpy_in=Tube.total_enthalpy,
                         mass_flow_in=Tube.mass_flow)
 
-'''
-Manifold = IsothermalVolume("Intermediate",
-                            FFNetwork,
-                            pressure=ManifoldGas.pressure,
-                            temperature=ManifoldGas.temperature,
-                            volume=0.01,
-                            mass_flow_in=Tube.mass_flow)
-'''
 
 Nozzle = IsentropicAreaChange(
     "Nozzle",
