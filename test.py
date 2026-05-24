@@ -98,12 +98,27 @@ Nozzle = IsentropicAreaChange(
     exit_mach_regime='supersonic'
 )
 
-'''
+mdot = Nozzle.mass_flow
+Me = Nozzle.downstream_mach_number
+R = Nozzle.gas_constant
+k = Nozzle.specific_heat_ratio
+Ti = Nozzle.upstream_static_temperature
+Te_Ti = Nozzle.static_temperature_ratio
+Te = Ti * Te_Ti
+Pe = Nozzle.downstream_static_pressure
+Ae = Nozzle.downstream_area
+Pamb = 101325
+
+F = mdot*Me*np.sqrt(k*R*Te) + (Pe - Pamb)*Ae
+
+
+
 PeBalance = Balance("Exit Pressure Balance",
                     FFNetwork,
                     variable=Tube.length,
-                    function=Nozzle.downstream_static_pressure - 2*PSIA_TO_PA)
-'''
+                    function=F - 60*LBF_TO_N,
+                    bounds=(0, None))
+
 
 solution = SteadyState(FFNetwork).solve(
     return_type="dataframe",
@@ -112,3 +127,6 @@ solution = SteadyState(FFNetwork).solve(
 )
 
 print(solution.to_string(index=False))
+
+print(F.value * N_TO_LBF)
+print(Tube.length.value * M_TO_IN)

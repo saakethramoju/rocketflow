@@ -78,7 +78,9 @@ class IsentropicCompressibleOrifice(Component):
 
 
 class IsentropicAreaChange(Component):
-
+    """
+    Ratios are downstream to upstream
+    """
     def __init__(
         self,
         name: str,
@@ -91,17 +93,26 @@ class IsentropicAreaChange(Component):
         upstream_area: float,
         downstream_static_pressure: State | None = None,
         downstream_area: State | float | None = None,
+        exit_mach_regime: str = "subsonic",
         downstream_mach_number: State | None = None,
         mass_flow: State | None = None,
         total_enthalpy: State | None = None,
-        exit_mach_regime: str = "subsonic",
+        static_temperature_ratio: State | None = None,
+        velocity_ratio: State | None = None,
+        density_ratio: State | None = None
     ):
         
         self._use_downstream_pressure = downstream_static_pressure is not None
         self._use_downstream_area = downstream_area is not None
 
         self.setup()
+        temp = self.exit_mach_regime
         self.exit_mach_regime = self.exit_mach_regime.lower()
+
+        if self.exit_mach_regime not in ("subsonic", "supersonic"):
+            raise ValueError(
+                f"Regime must be 'subsonic' or 'supersonic', got {temp}"
+            )
 
         if self._use_downstream_pressure and self._use_downstream_area:
             self._mode = "pressure"
@@ -168,9 +179,16 @@ class IsentropicAreaChange(Component):
         mdot = p1 * np.sqrt(k / (R * T1)) * A1 * M1
         h0 = k * R * T0 / (k - 1.0)
 
+        T2_T1 = (1 + (k-1)/2 * M1**2) / (1 + (k-1)/2 * M2**2)
+        v2_v1 = (M2/M1) * np.sqrt(T2_T1)
+        rho2_rho1 = (p2/p1)**(1/k)
+
         self.downstream_mach_number.value = M2
         self.mass_flow.value = mdot
         self.total_enthalpy.value = h0
+        self.static_temperature_ratio.value = T2_T1
+        self.velocity_ratio.value = v2_v1
+        self.density_ratio.value = rho2_rho1
 
     def _area_mach_function(self, M: float, gamma: float) -> float:
         M = float(M)
@@ -362,21 +380,19 @@ class UnchokedFannoFlow(Component):
         mass_flow: State | None = None,
         downstream_mach_number: State | None = None,
         total_enthalpy: State | None = None,
-        regime: str = "subsonic",
     ):
         self.setup()
 
-        self._eps = 1e-8
         M1 = self.upstream_mach_number.value
         if M1 == 1.0:
             raise ValueError("Upstream Mach Number cannot be 1.0!")
         elif M1 <= 0:
             raise ValueError("Upstream Mach Number must be positive!")
-        self._z = State(np.log(M1 / (1.0 - M1)))
+        elif M1 > 1.0:
+            raise ValueError("Upstream Mach Number must be subsonic!")
 
     def evaluate_states(self):
-        M1 = self._eps + (1.0 - 2.0 * self._eps) / (1.0 + np.exp(-self._z.value))
-
+        M1 = self.upstream_mach_number.value
         rho1 = self.upstream_density.value
         a1 = self.upstream_speed_of_sound.value
         rho2 = self.downstream_density.value
@@ -418,7 +434,7 @@ class UnchokedFannoFlow(Component):
 
     @property
     def iteration_variables(self):
-        return [self._z]
+        return [self.upstream_mach_number]
 
     @property
     def residuals(self):
