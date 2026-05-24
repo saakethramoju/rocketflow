@@ -32,7 +32,7 @@ class Colebrook(Component):
     ):
         self.setup()
 
-        self.log_friction_factor = State(np.log(self.friction_factor.value))
+        #self.log_friction_factor = State(np.log(self.friction_factor.value))
         self.Deff = 16.0 * self.hydraulic_diameter.value / self.poiseuille_number.value
 
     def evaluate_states(self):
@@ -53,11 +53,12 @@ class Colebrook(Component):
         else:
             self.reynolds_number.value = Re_eff
 
-        self.friction_factor.value = np.exp(self.log_friction_factor.value)
+        #self.friction_factor.value = np.exp(self.log_friction_factor.value)
 
     @property
     def iteration_variables(self):
-        return [self.log_friction_factor]
+        #return [self.log_friction_factor]
+        return [self.friction_factor]
 
     @property
     def residuals(self):
@@ -111,7 +112,7 @@ class Churchill(Component):
     ):
         self.setup()
 
-        self.log_friction_factor = State(np.log(self.friction_factor.value))
+        #self.log_friction_factor = State(np.log(self.friction_factor.value))
 
         self.Deff = 16*self.hydraulic_diameter.value / self.poiseuille_number.value
 
@@ -122,11 +123,12 @@ class Churchill(Component):
             * self.Deff
             / (self.dynamic_viscosity.value * self.cross_sectional_area.value)
         )
-        self.friction_factor.value = np.exp(self.log_friction_factor.value)
+        #self.friction_factor.value = np.exp(self.log_friction_factor.value)
 
     @property
     def iteration_variables(self):
-        return [self.log_friction_factor]
+        #return [self.log_friction_factor]
+        return [self.friction_factor]
 
     @property
     def residuals(self):
