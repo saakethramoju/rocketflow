@@ -59,13 +59,14 @@ class Component(ABC):
                 self.initialize_attribute(value),
             )
 
-
-    def initialize_attribute(self, value: State | float | int | str | None = None) -> State:
+    def initialize_attribute(self, value: State | float | int | str | bool | None = None):
         """
         Normalize input into a State object.
 
         - State -> returned directly
         - float/int -> wrapped in State
+        - bool -> returned directly
+        - str -> returned directly
         - None -> empty placeholder State
         - Anything else -> returned directly
         """
@@ -76,17 +77,13 @@ class Component(ABC):
         if value is None:
             return State()
 
+        if isinstance(value, bool):
+            return value
+
         if isinstance(value, (float, int)):
             return State(float(value))
-        
+
         return value
-
-        '''
-        raise TypeError(
-            f"Expected State, float, int, or None; "
-            f"got {type(value).__name__}."
-        )'''
-
 
     def initialize_component(self, name: str, network: Network) -> None:
         self.name = name

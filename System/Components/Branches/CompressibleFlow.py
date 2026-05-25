@@ -79,7 +79,32 @@ class IsentropicCompressibleOrifice(Component):
 
 class IsentropicAreaChange(Component):
     """
-    Ratios are downstream to upstream
+    Notes
+    -----------
+    1) Forward flow only
+    2) Isentropic, adiabatic, inviscid area change
+    3) Ideal gas with constant specific heat ratio
+    4) Ratios are downstream to upstream
+    5) If downstream static pressure is provided, this component uses
+    pressure mode
+    6) If downstream area is provided and downstream static pressure is not
+    provided, this component uses area mode
+    7) If both downstream static pressure and downstream area are provided,
+    pressure mode takes priority and downstream area is overwritten with
+    the isentropically consistent area
+    8) In pressure mode, downstream Mach is calculated from the isentropic
+    pressure relation
+    9) In area mode, downstream Mach is calculated from the area-Mach relation
+    using the selected subsonic or supersonic branch
+    10) Mass flow is calculated from the upstream static state, upstream Mach,
+        and upstream area
+    11) Total enthalpy is calculated from the ideal-gas stagnation temperature
+    12) This is an explicit component; it does not add residuals to force
+        consistency with an independently solved downstream node
+    13) To ensure consistency with a downstream node, assign the downstream
+        node directly from this component's outputs or ratio outputs
+    14) This component does not model shocks, friction, heat transfer, choking
+        losses, or non-isentropic pressure loss
     """
     def __init__(
         self,
@@ -88,7 +113,7 @@ class IsentropicAreaChange(Component):
         upstream_mach_number: State,
         upstream_static_pressure: State,
         upstream_static_temperature: State,
-        gas_constant: float,
+        specific_gas_constant: float,
         specific_heat_ratio: float,
         upstream_area: float,
         downstream_static_pressure: State | None = None,
@@ -131,7 +156,7 @@ class IsentropicAreaChange(Component):
         p1 = self.upstream_static_pressure.value
         T1 = self.upstream_static_temperature.value
         A1 = self.upstream_area.value
-        R = self.gas_constant.value
+        R = self.specific_gas_constant.value
         k = self.specific_heat_ratio.value
 
         T0 = T1 * (1.0 + (k - 1.0) / 2.0 * M1**2)
@@ -293,8 +318,8 @@ class ChokedFannoFlow(Component):
         velocity_ratio: State | None = None,
         total_pressure_ratio: State | None = None,
         total_temperature_ratio=1.0,
-        friction_factor_used: bool = True
     ):
+        self._use_given_mach = upstream_mach_number is not None
         self.setup()
 
         temp = self.regime
@@ -304,9 +329,7 @@ class ChokedFannoFlow(Component):
             raise ValueError(
                 f"Regime must be 'subsonic' or 'supersonic', got {temp}"
             )
-        
-        if self.upstream_mach_number.is_assigned:
-            self.friction_factor_used = False
+    
 
     def evaluate_states(self):
         k = self.specific_heat_ratio.value
@@ -317,12 +340,13 @@ class ChokedFannoFlow(Component):
         f = self.friction_factor.value
         A = (np.pi / 4.0) * D**2
 
-        if not self.friction_factor_used:
+        if self._use_given_mach:
             M1 = self.upstream_mach_number.value
             self._validate_mach_regime(M1)
         else:
             fL_D = f * L / D
             M1 = self._inverse_fanno_function(fL_D, k, self.regime)
+            self.upstream_mach_number.value = M1
 
         G = rho1 * M1 * a1
         mdot = G * A
