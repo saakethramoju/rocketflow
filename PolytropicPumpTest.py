@@ -50,7 +50,7 @@ FuelTankFluid = FluidLookup(
     "Tank Fuel Liquid",
     PumpNetwork,
     fuel,
-    pressure=State(80 * PSIA_TO_PA),
+    pressure=FuelUllageGas.pressure,
     temperature=300,
 )
 
@@ -58,7 +58,7 @@ OxTankFluid = FluidLookup(
     "Tank Oxidizer Liquid",
     PumpNetwork,
     oxidizer,
-    pressure=State(80 * PSIA_TO_PA),
+    pressure=OxUllageGas.pressure,
     temperature=90,
 )
 
@@ -419,29 +419,6 @@ OxPumpOutlet = Volume(
     total_enthalpy_in=OxEPump.discharge_total_enthalpy,
 )
 
-'''
-FuelInjectorInletLine = DischargeCoefficient(
-    "Fuel Injector Inlet",
-    PumpNetwork,
-    upstream_pressure=FuelPumpOutlet.pressure,
-    downstream_pressure=FuelManifoldFluid.pressure,
-    density=FuelPumpOutlet.density,
-    discharge_coefficient=1,
-    cross_sectional_area=5.0 * 0.56e-4,
-    mass_flow=FuelPumpOutlet.mass_flow_out,
-)
-
-OxInjectorInletLine = DischargeCoefficient(
-    "Ox Injector Inlet",
-    PumpNetwork,
-    upstream_pressure=OxPumpOutlet.pressure,
-    downstream_pressure=OxManifoldFluid.pressure,
-    density=OxPumpOutlet.density,
-    discharge_coefficient=1,
-    cross_sectional_area=5.0 * 1.25e-4,
-    mass_flow=OxPumpOutlet.mass_flow_out,
-)
-'''
 
 FuelInjectorInletLine = DarcyWeisbach(
     "Fuel Injector Inlet",
@@ -601,5 +578,47 @@ solution = SteadyState(PumpNetwork).solve(
 print(solution.to_string(index=False))
 
 
-print(f"Ox Tank:{OxTank.pressure.value * PA_TO_PSIA:.3f} psia")
-print(f"Fuel Tank:{FuelTank.pressure.value * PA_TO_PSIA:.3f} psia")
+print("\n" + "="*50)
+print("              SYSTEM PRESSURES")
+print("="*50)
+
+print("\n[Tank Pressures]")
+print(f"  Fuel Tank Pressure              : {FuelTank.pressure.value * PA_TO_PSIA:10.3f} psia")
+print(f"  Ox Tank Pressure                : {OxTank.pressure.value * PA_TO_PSIA:10.3f} psia")
+
+print("\n[Pump Suction]")
+print(f"  Fuel Pump Inlet Pressure        : {FuelPumpInlet.pressure.value * PA_TO_PSIA:10.3f} psia")
+print(f"  Ox Pump Inlet Pressure          : {OxPumpInlet.pressure.value * PA_TO_PSIA:10.3f} psia")
+
+print("\n[Pump Discharge]")
+print(f"  Fuel Pump Outlet Pressure       : {FuelPumpOutlet.pressure.value * PA_TO_PSIA:10.3f} psia")
+print(f"  Ox Pump Outlet Pressure         : {OxPumpOutlet.pressure.value * PA_TO_PSIA:10.3f} psia")
+
+print("\n[Injector Manifolds]")
+print(f"  Fuel Manifold Pressure          : {FuelManifold.pressure.value * PA_TO_PSIA:10.3f} psia")
+print(f"  Ox Manifold Pressure            : {OxManifold.pressure.value * PA_TO_PSIA:10.3f} psia")
+
+print("\n[Chamber]")
+print(f"  Chamber Pressure                : {MainChamber.chamber_pressure.value * PA_TO_PSIA:10.3f} psia")
+
+print("\n[Pressure Drops]")
+print(f"  Fuel Main Line dP               : {(FuelRunline.upstream_pressure.value - FuelRunline.downstream_pressure.value) * PA_TO_PSIA:10.3f} psid")
+print(f"  Ox Main Line dP                 : {(OxRunline.upstream_pressure.value - OxRunline.downstream_pressure.value) * PA_TO_PSIA:10.3f} psid")
+
+print(f"  Fuel Pump dP                    : {(FuelPumpOutlet.pressure.value - FuelPumpInlet.pressure.value) * PA_TO_PSIA:10.3f} psid")
+print(f"  Ox Pump dP                      : {(OxPumpOutlet.pressure.value - OxPumpInlet.pressure.value) * PA_TO_PSIA:10.3f} psid")
+
+print(f"  Fuel Injector dP                : {(FuelManifold.pressure.value - chamber_pressure.value) * PA_TO_PSIA:10.3f} psid")
+print(f"  Ox Injector dP                  : {(OxManifold.pressure.value - chamber_pressure.value) * PA_TO_PSIA:10.3f} psid")
+
+print("\n[Injector Stiffness]")
+fuel_injector_dp = FuelManifold.pressure.value - chamber_pressure.value
+ox_injector_dp = OxManifold.pressure.value - chamber_pressure.value
+
+fuel_injector_stiffness = 100.0 * fuel_injector_dp / chamber_pressure.value
+ox_injector_stiffness = 100.0 * ox_injector_dp / chamber_pressure.value
+
+print(f"  Fuel Injector Stiffness         : {fuel_injector_stiffness:10.3f} %")
+print(f"  Ox Injector Stiffness           : {ox_injector_stiffness:10.3f} %")
+
+print("="*50)
