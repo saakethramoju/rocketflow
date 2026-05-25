@@ -32,62 +32,41 @@ class Colebrook(Component):
     ):
         self.setup()
 
-        #self.log_friction_factor = State(np.log(self.friction_factor.value))
-        self.Deff = 16.0 * self.hydraulic_diameter.value / self.poiseuille_number.value
-
     def evaluate_states(self):
         mdot = abs(self.mass_flow.value)
         mu = self.dynamic_viscosity.value
         A = self.cross_sectional_area.value
         Dh = self.hydraulic_diameter.value
         Po = self.poiseuille_number.value
+        e = self.roughness.value
 
         Re_Dh = mdot * Dh / (mu * A)
         Deff = 16.0 * Dh / Po
         Re_eff = mdot * Deff / (mu * A)
 
+        Re_Dh = max(Re_Dh, 1e-12)
+        Re_eff = max(Re_eff, 1e-12)
+
         self.Deff = Deff
 
         if Re_Dh <= self.reynolds_number_threshold.value:
             self.reynolds_number.value = Re_Dh
+            f = 4*Po/Re_Dh
         else:
             self.reynolds_number.value = Re_eff
+            f = self._colebrook_explicit(Re_eff, e, Deff)
 
-        #self.friction_factor.value = np.exp(self.log_friction_factor.value)
+        self.friction_factor.value = f
 
-    @property
-    def iteration_variables(self):
-        #return [self.log_friction_factor]
-        return [self.friction_factor]
+    def _colebrook_explicit(self, Re, roughness, hydraulic_diameter):
+        a = 2.51 / Re
+        b = roughness / (3.7 * hydraulic_diameter)
+        c = 0.5 * np.log(10.0)
 
-    @property
-    def residuals(self):
-        f = max(self.friction_factor.value, 1e-12)
+        y = np.log(c / a) + c * b / a
+        x = wrightomega(y) / c - b / a
 
-        mdot = abs(self.mass_flow.value)
-        mu = self.dynamic_viscosity.value
-        A = self.cross_sectional_area.value
-        Dh = self.hydraulic_diameter.value
-        Po = self.poiseuille_number.value
-        eps = self.roughness.value
-
-        Re_Dh = max(mdot * Dh / (mu * A), 1e-12)
-
-        if Re_Dh <= self.reynolds_number_threshold.value:
-            f_predicted = 4.0 * Po / Re_Dh
-            return [self.friction_factor.value - f_predicted]
-
-        Deff = 16.0 * Dh / Po
-        Re_eff = max(mdot * Deff / (mu * A), 1e-12)
-
-        return [
-            1.0 / np.sqrt(f)
-            + 2.0 * np.log10(
-                eps / (3.7 * Deff)
-                + 2.51 / (Re_eff * np.sqrt(f))
-            )
-        ]
-
+        return 1.0 / x**2
 
 
 
@@ -111,9 +90,6 @@ class Churchill(Component):
         reynolds_number: State | float | None = None,
     ):
         self.setup()
-
-        #self.log_friction_factor = State(np.log(self.friction_factor.value))
-
         self.Deff = 16*self.hydraulic_diameter.value / self.poiseuille_number.value
 
     def evaluate_states(self):
@@ -123,28 +99,13 @@ class Churchill(Component):
             * self.Deff
             / (self.dynamic_viscosity.value * self.cross_sectional_area.value)
         )
-        #self.friction_factor.value = np.exp(self.log_friction_factor.value)
 
-    @property
-    def iteration_variables(self):
-        #return [self.log_friction_factor]
-        return [self.friction_factor]
-
-    @property
-    def residuals(self):
-        Re = max(self.reynolds_number.value, 1e-12)
+        self.reynolds_number.value = max(self.reynolds_number.value, 1e-12)
+        Re = self.reynolds_number.value
         relative_roughness = self.roughness.value / self.Deff
 
-        A = (
-            2.457
-            * np.log(
-                1.0 / ((7.0 / Re) ** 0.9 + 0.27 * relative_roughness)
-            )
-        ) ** 16
-
+        A = (2.457 * np.log(1.0 / ((7.0 / Re) ** 0.9 + 0.27 * relative_roughness))) ** 16
         B = (37530.0 / Re) ** 16
+        f = 8.0 * ((8.0 / Re) ** 12 + (A + B) ** (-1.5)) ** (1.0 / 12.0)
 
-        return [self.friction_factor.value -8.0 * (
-            (8.0 / Re) ** 12
-            + (A + B) ** (-1.5)
-        ) ** (1.0 / 12.0)]
+        self.friction_factor.value = f
