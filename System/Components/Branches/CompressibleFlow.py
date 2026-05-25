@@ -368,8 +368,10 @@ class CompressibleFlowTube(Component):
         network: Network,
         mass_flow: State,
         upstream_static_pressure: State,
+        upstream_static_temperature: State,
         upstream_density: State,
         downstream_static_pressure: State,
+        downstream_static_temperature: State,
         downstream_density: State,
         friction_factor: float,
         length: float,
@@ -377,10 +379,15 @@ class CompressibleFlowTube(Component):
         upstream_static_enthalpy: State | None = None,
         upstream_speed_of_sound: State | None = None,
         downstream_speed_of_sound: State | None = None,
+        specific_heat_ratio: State | None = None,
 
         total_enthalpy: State | None = None,
         upstream_mach_number: State | None = None,
-        downstream_mach_number: State | None = None
+        downstream_mach_number: State | None = None,
+        upstream_total_pressure: State | None = None,
+        upstream_total_temperature: State | None = None,
+        downstream_total_pressure: State | None = None,
+        downstream_total_temperature: State | None = None
     ):
         self.setup()
 
@@ -401,21 +408,40 @@ class CompressibleFlowTube(Component):
 
         if self.upstream_static_enthalpy.is_assigned:
             h1 = self.upstream_static_enthalpy.value
-            self.total_enthalpy.value = h1 + 0.5*(u1**2)
+            self.total_enthalpy.value = h1 + 0.5 * u1**2
 
         if self.upstream_speed_of_sound.is_assigned:
             a1 = self.upstream_speed_of_sound.value
-            self.upstream_mach_number.value = u1 / a1
+            M1 = u1 / a1
+            self.upstream_mach_number.value = M1
 
         if self.downstream_speed_of_sound.is_assigned:
             a2 = self.downstream_speed_of_sound.value
-            self.downstream_mach_number.value = u2 / a2       
+            M2 = u2 / a2
+            self.downstream_mach_number.value = M2
+
+        if (
+            self.specific_heat_ratio.is_assigned
+            and self.upstream_speed_of_sound.is_assigned
+        ):
+            k = self.specific_heat_ratio.value
+            self.upstream_total_temperature.value = self.upstream_static_temperature.value * (1 + 0.5 * (k - 1) * M1**2)
+            self.upstream_total_pressure.value = p1 * (1 + 0.5 * (k - 1) * M1**2)**(k / (k - 1))
+
+        if (
+            self.specific_heat_ratio.is_assigned
+            and self.downstream_speed_of_sound.is_assigned
+        ):
+            k = self.specific_heat_ratio.value
+            self.downstream_total_temperature.value = self.downstream_static_temperature.value * (1 + 0.5 * (k - 1) * M2**2)
+            self.downstream_total_pressure.value = p2 * (1 + 0.5 * (k - 1) * M2**2)**(k / (k - 1))      
 
         Kf = 8 * f * L / (rho1 * np.pi**2 * D**5)
 
         inertia = max(mdot, 0.0) * (u2 - u1) - max(-mdot, 0.0) * (u1 - u2)
         pressure = (p1 - p2) * A
         friction = Kf * mdot * np.abs(mdot) * A
+
 
         self._residual = pressure - friction - inertia
 

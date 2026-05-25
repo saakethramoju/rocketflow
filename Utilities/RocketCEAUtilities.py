@@ -49,6 +49,12 @@ PROPELLANT_NAME_BANK = {
     "ch4": "CH4",
     "lng": "CH4",
 
+    # Propane
+    "propane": "C3H8",
+    "c3h8": "C3H8",
+    "n-propane": "C3H8",
+    "npropane": "C3H8",
+
     # Ethanol
     "ethanol": "C2H5OH",
     "alcohol": "C2H5OH",

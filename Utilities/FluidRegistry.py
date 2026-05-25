@@ -26,7 +26,7 @@ SPECIES_DATABASE = MappingProxyType({
     "Ammonia": SpeciesRecord("Ammonia", coolprop="Ammonia", pyromat="NH3"),
     "Ethane": SpeciesRecord("Ethane", coolprop="Ethane", pyromat="C2H6"),
     "Ethylene": SpeciesRecord("Ethylene", coolprop="Ethylene", pyromat="C2H4"),
-    "Propane": SpeciesRecord("Propane", coolprop="Propane", pyromat="C3H8"),
+    "Propane": SpeciesRecord("Propane", coolprop="n-Propane", pyromat="C3H8"),
     "Butane": SpeciesRecord("Butane", coolprop="Butane", pyromat="C4H10"),
     "IsoButane": SpeciesRecord("IsoButane", coolprop="IsoButane", pyromat="C4H10"),
     "Acetylene": SpeciesRecord("Acetylene", coolprop=None, pyromat="C2H2"),

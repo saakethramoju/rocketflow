@@ -16,6 +16,10 @@ chamber_pressure = State(285 * PSIA_TO_PA)
 atmospheric_pressure = 14.67 * PSIA_TO_PA
 
 
+
+
+
+
 # ---- Fluids ----
 pressurant = "gn2"
 fuel = "rp-1"
@@ -28,6 +32,25 @@ PressurantSupply = FluidLookup(
     pressurant,
     pressure=6000 * PSIA_TO_PA,
     temperature=300,
+)
+
+FuelPressVolumeFluid = FluidLookup(
+    "Fuel Press Volume Gas",
+    PumpNetwork,
+    pressurant,
+    pressure=5000 * PSIA_TO_PA,
+    temperature=300,
+    flash_values=("pressure", "enthalpy")
+)
+
+
+OxPressVolumeFluid = FluidLookup(
+    "Oxygen Press Volume Gas",
+    PumpNetwork,
+    pressurant,
+    pressure=5000 * PSIA_TO_PA,
+    temperature=300,
+    flash_values=("pressure", "enthalpy")
 )
 
 FuelUllageGas = IdealGasLookup(
@@ -178,6 +201,11 @@ normalized_torque_coefficient_map = [
 ]
 
 
+
+
+
+
+
 # ---- Components ----
 COPV = Boundary(
     "COPV",
@@ -186,28 +214,120 @@ COPV = Boundary(
     PressurantSupply.temperature,
 )
 
+FuelPressurantLine = CompressibleFlowTube(
+    "Fuel Press Line",
+    PumpNetwork,
+    mass_flow=0.03,
+    upstream_static_pressure=COPV.pressure,
+    upstream_static_temperature=COPV.temperature,
+    upstream_density=PressurantSupply.density,
+    downstream_static_pressure=FuelPressVolumeFluid.pressure,
+    downstream_static_temperature=FuelPressVolumeFluid.temperature,
+    downstream_density=FuelPressVolumeFluid.density,
+    friction_factor=0.003,
+    length=5 * IN_TO_M,
+    inner_diameter=0.25 * IN_TO_M,
+    upstream_static_enthalpy=PressurantSupply.enthalpy,
+    upstream_speed_of_sound=PressurantSupply.speed_of_sound,
+    downstream_speed_of_sound=FuelPressVolumeFluid.speed_of_sound,
+    specific_heat_ratio=FuelUllageGas.specific_heat_ratio
+)
+
+FuelPressLineFriction = Churchill(
+    "Fuel Press Line Friction",
+    PumpNetwork,
+    mass_flow=FuelPressurantLine.mass_flow,
+    friction_factor=FuelPressurantLine.friction_factor,
+    hydraulic_diameter=FuelPressurantLine.inner_diameter,
+    dynamic_viscosity=PressurantSupply.dynamic_viscosity,
+    cross_sectional_area=(np.pi/4) * (FuelPressurantLine.inner_diameter**2),
+    roughness=1e-6
+)
+
+FuelPressVolume = Volume(
+    "Fuel Pressurant Volume",
+    PumpNetwork,
+    pressure=FuelPressVolumeFluid.pressure,
+    enthalpy=FuelPressVolumeFluid.enthalpy,
+    volume=1,
+    temperature=FuelPressVolumeFluid.temperature,
+    total_enthalpy_in=FuelPressurantLine.total_enthalpy,
+    mass_flow_in=FuelPressurantLine.mass_flow
+)
+
+
+
+
+
+OxPressurantLine = CompressibleFlowTube(
+    "Oxygen Press Line",
+    PumpNetwork,
+    mass_flow=0.03,
+    upstream_static_pressure=COPV.pressure,
+    upstream_static_temperature=COPV.temperature,
+    upstream_density=PressurantSupply.density,
+    downstream_static_pressure=OxPressVolumeFluid.pressure,
+    downstream_static_temperature=OxPressVolumeFluid.temperature,
+    downstream_density=OxPressVolumeFluid.density,
+    friction_factor=0.003,
+    length=10 * IN_TO_M,
+    inner_diameter=0.25 * IN_TO_M,
+    upstream_static_enthalpy=PressurantSupply.enthalpy,
+    upstream_speed_of_sound=PressurantSupply.speed_of_sound,
+    downstream_speed_of_sound=OxPressVolumeFluid.speed_of_sound,
+    specific_heat_ratio=OxUllageGas.specific_heat_ratio
+)
+
+OxPressLineFriction = Churchill(
+    "Ox Press Line Friction",
+    PumpNetwork,
+    mass_flow=OxPressurantLine.mass_flow,
+    friction_factor=OxPressurantLine.friction_factor,
+    hydraulic_diameter=OxPressurantLine.inner_diameter,
+    dynamic_viscosity=PressurantSupply.dynamic_viscosity,
+    cross_sectional_area=(np.pi/4) * (OxPressurantLine.inner_diameter**2),
+    roughness=1e-6
+)
+
+OxPressVolume = Volume(
+    "Ox Pressurant Volume",
+    PumpNetwork,
+    pressure=OxPressVolumeFluid.pressure,
+    enthalpy=OxPressVolumeFluid.enthalpy,
+    volume=1,
+    temperature=OxPressVolumeFluid.temperature,
+    total_enthalpy_in=OxPressurantLine.total_enthalpy,
+    mass_flow_in=OxPressurantLine.mass_flow
+)
+
+
+
 FuelBangBang = IsentropicGasRegulator(
     "FBB",
     PumpNetwork,
-    COPV.pressure,
-    COPV.temperature,
+    upstream_total_pressure=FuelPressurantLine.downstream_total_pressure,
+    upstream_total_temperature=FuelPressurantLine.downstream_total_temperature,
     set_pressure=FuelUllageGas.pressure,
     discharge_coefficient=1,
     cross_sectional_area=np.pi / 4 * (0.25 * IN_TO_M)**2,
     specific_gas_constant=FuelUllageGas.gas_constant,
     specific_heat_ratio=FuelUllageGas.specific_heat_ratio,
+    total_enthalpy=FuelPressVolume.total_enthalpy_out,
+    mass_flow=FuelPressVolume.mass_flow_out
 )
 
 OxBangBang = IsentropicGasRegulator(
     "OBB",
     PumpNetwork,
-    COPV.pressure,
-    COPV.temperature,
+    upstream_total_pressure=OxPressurantLine.downstream_total_pressure,
+    upstream_total_temperature=OxPressurantLine.downstream_total_temperature,
     set_pressure=OxUllageGas.pressure,
     discharge_coefficient=1,
     cross_sectional_area=np.pi / 4 * (0.25 * IN_TO_M)**2,
     specific_gas_constant=OxUllageGas.gas_constant,
     specific_heat_ratio=OxUllageGas.specific_heat_ratio,
+    total_enthalpy=OxPressVolume.total_enthalpy_out,
+    mass_flow=OxPressVolume.mass_flow_out
 )
 
 FuelTank = PressurizedTank(
@@ -552,6 +672,10 @@ Nozzle = RocketCEAChokedNozzle(
 )
 
 
+
+
+
+# ---- Balances ----
 ChamberPressureBalance = Balance(
     "Chamber Pressure Balance",
     PumpNetwork,
@@ -581,6 +705,8 @@ OxPumpShaftSpeedBalance = Balance(
 )
 
 
+
+# ---- Solver ----
 solution = SteadyState(PumpNetwork).solve(
     return_type="dataframe",
     verbose=True,
