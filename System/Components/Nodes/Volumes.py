@@ -76,15 +76,15 @@ class Volume(Component):
         
         self.setup()
     
+        if not self.total_enthalpy_out.is_assigned:
+            self.total_enthalpy_out = self.enthalpy
+            
     @property
     def iteration_variables(self) -> list[State]:
         return [self.pressure, self.enthalpy]
 
     @property
     def residuals(self) -> list[float]:
-        if not self.total_enthalpy_out.is_assigned:
-            self.total_enthalpy_out.value = self.enthalpy.value
-
         return [
             self.mass_flow_in.value - self.mass_flow_out.value,
             (self.mass_flow_in.value * self.total_enthalpy_in.value)
