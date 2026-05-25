@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy.special import lambertw
+from scipy.special import lambertw, wrightomega
 from scipy.optimize import brentq
 from typing import TYPE_CHECKING
 
@@ -248,19 +248,25 @@ class IsentropicAreaChange(Component):
 
 
 
-
-
 class ChokedFannoFlow(Component):
     """
-    Assumptions
+    Notes
     -----------
     1) Forward flow only
     3) Constant friction factor
     4) Ideal gas
     5) Circular duct
-
-    Supersonic flow tends to be biased towards shorter tubes,
-    larger diameters, or smaller friction factors.
+    6) If M1 is provided, it will be used to calculate ratios
+    7) If M1 is not provided, it will be calculated from
+       friction factor, length, and diameter
+    8) Ratios are all downstream to upstream
+    9) Supersonic flow tends to be biased towards shorter tubes,
+       larger diameters, or smaller friction factors
+    10) Total enthalpy can only be given if static enthalpy is
+        provided
+    11) To ensure consistency with upstream node, the downstream
+        node should directly be assigned based on the ratio
+        outputs from this class
     """
 
     def __init__(
@@ -273,18 +279,34 @@ class ChokedFannoFlow(Component):
         friction_factor: State,
         length: float,
         inner_diameter: float,
+        upstream_static_enthalpy: State | None = None,
+        regime: str = "subsonic",
+        upstream_mach_number: State | None = None,
 
         mass_flux: State | None = None,
         mass_flow: State | None = None,
-        upstream_static_enthalpy: State | None = None,
         total_enthalpy: State | None = None,
-        upstream_mach_number: State | None = None,
-        downstream_mach_number = 1.0,
-        regime: str = "subsonic"
+        downstream_mach_number=1.0,
+        static_temperature_ratio: State | None = None,
+        static_pressure_ratio: State | None = None,
+        density_ratio: State | None = None,
+        velocity_ratio: State | None = None,
+        total_pressure_ratio: State | None = None,
+        total_temperature_ratio=1.0,
+        friction_factor_used: bool = True
     ):
         self.setup()
 
+        temp = self.regime
         self.regime = self.regime.lower()
+
+        if self.regime not in ("subsonic", "supersonic"):
+            raise ValueError(
+                f"Regime must be 'subsonic' or 'supersonic', got {temp}"
+            )
+        
+        if self.upstream_mach_number.is_assigned:
+            self.friction_factor_used = False
 
     def evaluate_states(self):
         k = self.specific_heat_ratio.value
@@ -295,9 +317,12 @@ class ChokedFannoFlow(Component):
         f = self.friction_factor.value
         A = (np.pi / 4.0) * D**2
 
-        fL_D = f * L / D
-
-        M1 = self._inverse_fanno_function(fL_D, k, self.regime)
+        if not self.friction_factor_used:
+            M1 = self.upstream_mach_number.value
+            self._validate_mach_regime(M1)
+        else:
+            fL_D = f * L / D
+            M1 = self._inverse_fanno_function(fL_D, k, self.regime)
 
         G = rho1 * M1 * a1
         mdot = G * A
@@ -309,9 +334,29 @@ class ChokedFannoFlow(Component):
         if self.upstream_static_enthalpy.is_assigned:
             h1 = self.upstream_static_enthalpy.value
             v1 = M1 * a1
-            self.total_enthalpy.value = h1 + 0.5*(v1**2)
+            self.total_enthalpy.value = h1 + 0.5 * v1**2
 
+        M2 = self.downstream_mach_number.value
 
+        T2_T1 = (1 + 0.5 * (k - 1) * M1**2) / (1 + 0.5 * (k - 1) * M2**2)
+        rho2_rho1 = (M1 / M2) * np.sqrt(1 / T2_T1)
+        p2_p1 = rho2_rho1 * T2_T1
+        v2_v1 = 1 / rho2_rho1
+        po2_po1 = (M1 / M2) * T2_T1**((k + 1) / (2 * (1 - k)))
+
+        self.static_temperature_ratio.value = T2_T1
+        self.static_pressure_ratio.value = p2_p1
+        self.density_ratio.value = rho2_rho1
+        self.velocity_ratio.value = v2_v1
+        self.total_pressure_ratio.value = po2_po1
+        self.total_temperature_ratio.value = 1.0
+
+    def _validate_mach_regime(self, M: float) -> None:
+        if self.regime == "subsonic" and M >= 1.0:
+            raise ValueError(f"Subsonic Fanno flow requires M1 < 1. Got M1={M:.6g}.")
+
+        if self.regime == "supersonic" and M <= 1.0:
+            raise ValueError(f"Supersonic Fanno flow requires M1 > 1. Got M1={M:.6g}.")
 
     def _fanno_function(self, M: float, k: float) -> float:
         return (
@@ -320,31 +365,55 @@ class ChokedFannoFlow(Component):
             * np.log(((k + 1.0) * M**2) / (2.0 + (k - 1.0) * M**2))
         )
 
-    def _inverse_fanno_function(
-        self,
-        target: float,
-        k: float,
-        branch: str = "subsonic",
-    ) -> float:
+    def _valid_fanno_geometry_message(self, target: float, k: float, branch: str) -> str:
+        f = self.friction_factor.value
+        L = self.length.value
+        D = self.inner_diameter.value
+        current = f * L / D
+
+        if branch == "supersonic":
+            M_limit = 10.0
+            target_limit = self._fanno_function(M_limit, k)
+            direction = "shorter tube, larger diameter, or lower friction factor"
+        elif branch == "subsonic":
+            M_limit = 1e-6
+            target_limit = self._fanno_function(M_limit, k)
+            direction = "longer tube, smaller diameter, or higher friction factor"
+        else:
+            raise ValueError("branch must be 'subsonic' or 'supersonic'")
+
+        valid_L = target_limit * D / f
+        valid_D = f * L / target_limit
+
+        return (
+            f"No valid {branch} Fanno solution for fL/D={current:.6g}, k={k:.6g}.\n"
+            f"Current geometry: L={L:.6g} m, D={D:.6g} m, f={f:.6g}.\n"
+            f"Try a {direction}.\n"
+            f"At current D and f, use approximately L <= {valid_L:.6g} m.\n"
+            f"At current L and f, use approximately D >= {valid_D:.6g} m."
+        )
+
+    def _inverse_fanno_function(self, target: float, k: float, branch: str = "subsonic") -> float:
         if target <= 0.0:
             return 1.0
 
         c = (k + 1.0) / 2.0
         B = 1.0 + (k / c) * target
-        arg = -np.exp(-B)
 
         if branch == "subsonic":
-            W = lambertw(arg, k=-1)
+            u = wrightomega(B)
         elif branch == "supersonic":
-            W = lambertw(arg, k=0)
+            u = -np.real(lambertw(-np.exp(-B), k=0))
         else:
             raise ValueError("branch must be 'subsonic' or 'supersonic'")
 
-        u = -np.real(W)
         x = c * u - (k - 1.0) / 2.0
-        M = 1.0 / np.sqrt(x)
 
-        return float(M)
+        if x <= 0.0 or not np.isfinite(x):
+            raise ValueError(self._valid_fanno_geometry_message(target, k, branch))
+
+        return float(1.0 / np.sqrt(x))
+
 
 
 
@@ -353,15 +422,38 @@ class ChokedFannoFlow(Component):
 
 class CompressibleFlowTube(Component):
     """
-    Explicit unchoked subsonic Fanno branch.
-
-    Given upstream state, downstream static pressure, friction factor,
-    length, and diameter, this component internally solves for the
-    upstream Mach number and then computes mass flow and downstream Mach.
-
-    This component does not add global solver residuals.
+    Notes
+    -----------
+    1) Forward and reverse flow are supported by the longitudinal inertia
+    sign convention
+    2) Constant friction factor
+    3) Ideal gas or weakly compressible fluid properties supplied externally
+    4) Circular duct
+    5) This component solves mass flow as an iteration variable using a
+       steady momentum residual
+    6) Upstream and downstream static pressures, densities, and temperatures
+       are provided by the connected nodes
+    7) Static temperatures are only used for total temperature calculation
+    8) If upstream static enthalpy is provided, total enthalpy is calculated
+       from upstream static enthalpy and upstream velocity
+    9) If upstream speed of sound is provided, upstream Mach number is
+       calculated
+    10) If downstream speed of sound is provided, downstream Mach number is
+        calculated
+    11) If specific heat ratio and upstream speed of sound are provided,
+        upstream total pressure and total temperature are calculated
+    12) If specific heat ratio and downstream speed of sound are provided,
+        downstream total pressure and total temperature are calculated
+    13) Total pressure calculations assume locally isentropic conversion
+        between static and stagnation properties
+    14) The friction term is based on the supplied friction factor, length,
+        diameter, density, and mass flow
+    15) This is not a choked-flow model; choking should be handled by a
+        separate component or regime switch
+    16) To ensure consistency, upstream and downstream node properties should
+        be solved by the network, while this branch supplies the momentum
+        residual connecting those nodes
     """
-
     def __init__(
         self,
         name: str,
