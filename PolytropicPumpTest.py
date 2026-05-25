@@ -269,17 +269,16 @@ FuelGravitydP = GravityPressureChange(
     downstream_pressure=FuelRunline.upstream_pressure
 )
 
-FuelRunlineFriction = Colebrook(
+FuelRunlineFriction = Churchill(
     "Fuel Main Line Friction",
     PumpNetwork,
     mass_flow=FuelRunline.mass_flow,
+    friction_factor=FuelRunline.friction_factor,
     hydraulic_diameter=FuelRunline.hydraulic_diameter,
     dynamic_viscosity=FuelTankFluid.dynamic_viscosity,
     cross_sectional_area=FuelRunline.cross_sectional_area,
-    roughness=1.5e-6,
-    friction_factor=FuelRunline.friction_factor,
+    roughness=1.5e-6
 )
-
 
 OxRunline = DarcyWeisbach(
     "Ox Main Line",
@@ -305,7 +304,7 @@ OxRunlineFriction = Colebrook(
     friction_factor=OxRunline.friction_factor,
 )
 
-
+'''
 FuelPumpInlet = IsothermalVolume(
     "Fuel Suction Inlet",
     PumpNetwork,
@@ -316,6 +315,19 @@ FuelPumpInlet = IsothermalVolume(
     mass_flow_in=FuelRunline.mass_flow,
     mass_flow_out=State((2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3)),
     volume=0.2 * IN3_TO_M3,
+)
+'''
+
+FuelPumpInlet = Volume(
+    "Fuel Suction Inlet",
+    PumpNetwork,
+    pressure=FuelPumpInletFluid.pressure,
+    enthalpy=FuelPumpInletFluid.enthalpy,
+    volume=1,
+    density=FuelPumpInletFluid.density,
+    total_enthalpy_in=FuelTankFluid.enthalpy,
+    mass_flow_in=FuelRunline.mass_flow,
+    mass_flow_out=State((2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3))
 )
 
 OxPumpInlet = IsothermalVolume(
@@ -621,4 +633,7 @@ ox_injector_stiffness = 100.0 * ox_injector_dp / chamber_pressure.value
 print(f"  Fuel Injector Stiffness         : {fuel_injector_stiffness:10.3f} %")
 print(f"  Ox Injector Stiffness           : {ox_injector_stiffness:10.3f} %")
 
+print("\n[Pressure Drops]")
+print(f"  Fuel Shaft Speed                : {fuel_shaft_speed:10.3f} rpm")
+print(f"  Ox Shaft Speed                  : {ox_shaft_speed:10.3f} rpm")
 print("="*50)
