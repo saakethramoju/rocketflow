@@ -731,15 +731,9 @@ class ChokedRayleighFlow(Component):
 
         pstar_p1 = (1.0 + k * M1**2) / (1.0 + k)
 
-        Tstar_T1 = (
-            ((1.0 + k) * M1)
-            / (1.0 + k * M1**2)
-        ) ** 2
+        Tstar_T1 = (((1.0 + k) * M1) / (1.0 + k * M1**2)) ** 2
 
-        rhostar_rho1 = (
-            (1.0 + k) * M1**2
-            / (1.0 + k * M1**2)
-        )
+        rhostar_rho1 = (1.0 + k) * M1**2/ (1.0 + k * M1**2)
 
         vstar_v1 = 1.0 / rhostar_rho1
 
@@ -767,12 +761,7 @@ class ChokedRayleighFlow(Component):
             )
 
     def _rayleigh_total_temperature_ratio_to_star(self, M: float, k: float) -> float:
-        return (
-            (2.0 + (k - 1.0) * M**2)
-            * (1.0 + k)
-            * M**2
-            / (1.0 + k * M**2) ** 2
-        )
+        return ((1+k)/(1+k*M**2))**2 * M**2 * ((1+(k-1)/2 * M**2)/(1+(k-1)/2))
 
     def _rayleigh_total_pressure_ratio_to_star(self, M: float, k: float) -> float:
         return (
