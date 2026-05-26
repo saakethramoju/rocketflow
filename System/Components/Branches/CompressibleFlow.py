@@ -514,7 +514,6 @@ class CompressibleFlowTube(Component):
         h1 = self.upstream_static_enthalpy.value
         p2 = self.downstream_static_pressure.value
         rho2 = self.downstream_density.value
-        f = self.friction_factor.value
         L = self.length.value
         D = self.inner_diameter.value
         A = (np.pi/4) * (D**2)
@@ -559,6 +558,7 @@ class CompressibleFlowTube(Component):
         if not self.friction_factor.is_assigned:
             friction = 0
         else:
+            f = self.friction_factor.value
             Kf = 8 * f * L / (rho1 * np.pi**2 * D**5)
             friction = Kf * mdot * np.abs(mdot) * A
 
