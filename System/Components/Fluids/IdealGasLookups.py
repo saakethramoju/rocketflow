@@ -252,6 +252,7 @@ class IdealGasLookup(Component):
         for prop_name in self._external_property_names:
             self._property_states[prop_name].value = self._get_property(prop_name)
 
+
     def __getattr__(self, name: str) -> State:
 
         if "_IdealGas" not in self.__dict__:
@@ -268,8 +269,8 @@ class IdealGasLookup(Component):
             )
 
         if name not in self._property_states:
-            self._property_states[name] = State(
-                expr=lambda prop=name: self._get_property(prop)
+            self._property_states[name] = State._derived(
+                lambda prop=name: self._get_property(prop)
             )
 
         return self._property_states[name]

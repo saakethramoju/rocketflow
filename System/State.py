@@ -1,20 +1,17 @@
 import math
 import numpy as np
-from typing import Callable
 
 
 class State:
     def __init__(
         self,
         value: float | None = None,
-        expr: Callable[[], float] | None = None,
+        *,
         bounds: tuple[float | None, float | None] | None = None,
         keep_feasible: bool = False,
     ):
         """
-        A scalar state that can either:
-        - store a direct numeric value, or
-        - be derived from an expression via `expr`.
+        A scalar state that stores a direct numeric value.
 
         This class also supports "placeholder" states via `State()`.
         That is useful when a State must exist up front so multiple
@@ -25,8 +22,6 @@ class State:
         ----------
         value
             Stored numeric value for a non-derived state.
-        expr
-            Callable used to compute a derived state's value on demand.
         bounds
             Optional tuple of the form:
                 (lower, upper)
@@ -42,9 +37,10 @@ class State:
         -----
         - `State()` is allowed and creates an uninitialized, non-derived state.
         - Accessing `.value` on an uninitialized non-derived state raises ValueError.
+        - Derived states are created internally by State arithmetic.
         - Derived states cannot be assigned to directly.
         """
-        self._expr = expr
+        self._expr = None
         self._lower_bound, self._upper_bound = self._normalize_bounds(bounds)
         self._keep_feasible = bool(keep_feasible)
         self._value = None
@@ -54,6 +50,12 @@ class State:
             value = float(value)
             self._validate_bounds(value)
             self._value = value
+
+    @classmethod
+    def _derived(cls, expr):
+        state = cls()
+        state._expr = expr
+        return state
 
     @staticmethod
     def _normalize_bounds(
@@ -169,12 +171,6 @@ class State:
 
     @property
     def is_assigned(self) -> bool:
-        """
-        True if this State currently has a usable value.
-
-        - For derived states, this is always True because their value is computed.
-        - For non-derived states, this is True only after assignment.
-        """
         return self._expr is not None or self._value is not None
 
     @property
@@ -198,11 +194,6 @@ class State:
         return self._keep_feasible
 
     def is_within_bounds(self, v: float | None = None) -> bool:
-        """
-        Check whether a value lies within bounds.
-
-        If `v` is None, checks the current state value.
-        """
         if v is None:
             v = self.value
 
@@ -223,7 +214,6 @@ class State:
             return "<uninitialized>"
 
         return str(self._value)
-        
 
     def __str__(self) -> str:
         value_str = self._value_string_for_display()
@@ -233,7 +223,6 @@ class State:
 
         return f"State(code={self._code}, value={value_str})"
 
-
     def __repr__(self) -> str:
         value_str = self._value_string_for_display()
 
@@ -241,7 +230,6 @@ class State:
             return f"State(code={self._code}, value={value_str}, bounds={self.bounds})"
 
         return f"State(code={self._code}, value={value_str})"
-    
 
     @staticmethod
     def _coerce(other) -> "State":
@@ -252,138 +240,138 @@ class State:
     # ---------- arithmetic ----------
     def __add__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: self.value + other.value)
+        return State._derived(lambda: self.value + other.value)
 
     def __radd__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: other.value + self.value)
+        return State._derived(lambda: other.value + self.value)
 
     def __sub__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: self.value - other.value)
+        return State._derived(lambda: self.value - other.value)
 
     def __rsub__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: other.value - self.value)
+        return State._derived(lambda: other.value - self.value)
 
     def __mul__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: self.value * other.value)
+        return State._derived(lambda: self.value * other.value)
 
     def __rmul__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: other.value * self.value)
+        return State._derived(lambda: other.value * self.value)
 
     def __truediv__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: self.value / other.value)
+        return State._derived(lambda: self.value / other.value)
 
     def __rtruediv__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: other.value / self.value)
+        return State._derived(lambda: other.value / self.value)
 
     def __pow__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: self.value ** other.value)
+        return State._derived(lambda: self.value ** other.value)
 
     def __rpow__(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: other.value ** self.value)
+        return State._derived(lambda: other.value ** self.value)
 
     def __neg__(self):
-        return State(expr=lambda: -self.value)
+        return State._derived(lambda: -self.value)
 
     def __abs__(self):
-        return State(expr=lambda: abs(self.value))
+        return State._derived(lambda: abs(self.value))
 
     # ---------- basic math ----------
     def sqrt(self):
-        return State(expr=lambda: math.sqrt(self.value))
+        return State._derived(lambda: math.sqrt(self.value))
 
     def exp(self):
-        return State(expr=lambda: math.exp(self.value))
+        return State._derived(lambda: math.exp(self.value))
 
     def expm1(self):
-        return State(expr=lambda: math.expm1(self.value))
+        return State._derived(lambda: math.expm1(self.value))
 
     def log(self):
-        return State(expr=lambda: math.log(self.value))
+        return State._derived(lambda: math.log(self.value))
 
     def log10(self):
-        return State(expr=lambda: math.log10(self.value))
+        return State._derived(lambda: math.log10(self.value))
 
     def log2(self):
-        return State(expr=lambda: math.log2(self.value))
+        return State._derived(lambda: math.log2(self.value))
 
     def log1p(self):
-        return State(expr=lambda: math.log1p(self.value))
+        return State._derived(lambda: math.log1p(self.value))
 
     # ---------- trig ----------
     def sin(self):
-        return State(expr=lambda: math.sin(self.value))
+        return State._derived(lambda: math.sin(self.value))
 
     def cos(self):
-        return State(expr=lambda: math.cos(self.value))
+        return State._derived(lambda: math.cos(self.value))
 
     def tan(self):
-        return State(expr=lambda: math.tan(self.value))
+        return State._derived(lambda: math.tan(self.value))
 
     def asin(self):
-        return State(expr=lambda: math.asin(self.value))
+        return State._derived(lambda: math.asin(self.value))
 
     def acos(self):
-        return State(expr=lambda: math.acos(self.value))
+        return State._derived(lambda: math.acos(self.value))
 
     def atan(self):
-        return State(expr=lambda: math.atan(self.value))
+        return State._derived(lambda: math.atan(self.value))
 
     # ---------- hyperbolic ----------
     def sinh(self):
-        return State(expr=lambda: math.sinh(self.value))
+        return State._derived(lambda: math.sinh(self.value))
 
     def cosh(self):
-        return State(expr=lambda: math.cosh(self.value))
+        return State._derived(lambda: math.cosh(self.value))
 
     def tanh(self):
-        return State(expr=lambda: math.tanh(self.value))
+        return State._derived(lambda: math.tanh(self.value))
 
     def asinh(self):
-        return State(expr=lambda: math.asinh(self.value))
+        return State._derived(lambda: math.asinh(self.value))
 
     def acosh(self):
-        return State(expr=lambda: math.acosh(self.value))
+        return State._derived(lambda: math.acosh(self.value))
 
     def atanh(self):
-        return State(expr=lambda: math.atanh(self.value))
+        return State._derived(lambda: math.atanh(self.value))
 
     # ---------- angle conversions ----------
     def degrees(self):
-        return State(expr=lambda: math.degrees(self.value))
+        return State._derived(lambda: math.degrees(self.value))
 
     def radians(self):
-        return State(expr=lambda: math.radians(self.value))
+        return State._derived(lambda: math.radians(self.value))
 
     # ---------- rounding / integer ----------
     def floor(self):
-        return State(expr=lambda: math.floor(self.value))
+        return State._derived(lambda: math.floor(self.value))
 
     def ceil(self):
-        return State(expr=lambda: math.ceil(self.value))
+        return State._derived(lambda: math.ceil(self.value))
 
     def trunc(self):
-        return State(expr=lambda: math.trunc(self.value))
-        
+        return State._derived(lambda: math.trunc(self.value))
+
     @staticmethod
     def maximum(a, b):
         a = State._coerce(a)
         b = State._coerce(b)
-        return State(expr=lambda: max(a.value, b.value))
+        return State._derived(lambda: max(a.value, b.value))
 
     @staticmethod
     def minimum(a, b):
         a = State._coerce(a)
         b = State._coerce(b)
-        return State(expr=lambda: min(a.value, b.value))
+        return State._derived(lambda: min(a.value, b.value))
 
     def clip(self, lower=None, upper=None):
         result = self
@@ -399,21 +387,21 @@ class State:
     # ---------- misc ----------
     def modf(self):
         return (
-            State(expr=lambda: math.modf(self.value)[0]),
-            State(expr=lambda: math.modf(self.value)[1]),
+            State._derived(lambda: math.modf(self.value)[0]),
+            State._derived(lambda: math.modf(self.value)[1]),
         )
 
     def fmod(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: math.fmod(self.value, other.value))
+        return State._derived(lambda: math.fmod(self.value, other.value))
 
     def hypot(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: math.hypot(self.value, other.value))
+        return State._derived(lambda: math.hypot(self.value, other.value))
 
     def copysign(self, other):
         other = self._coerce(other)
-        return State(expr=lambda: math.copysign(self.value, other.value))
-    
+        return State._derived(lambda: math.copysign(self.value, other.value))
+
     def __format__(self, format_spec: str) -> str:
         return format(self.value, format_spec)

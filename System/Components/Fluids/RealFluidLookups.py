@@ -211,8 +211,8 @@ class FluidLookup(Component):
             )
 
         if name not in self._property_states:
-            self._property_states[name] = State(
-                expr=lambda prop=name: getattr(self._Fluid, prop)
+            self._property_states[name] = State._derived(
+                lambda prop=name: getattr(self._Fluid, prop)
             )
 
         return self._property_states[name]
