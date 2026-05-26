@@ -109,3 +109,11 @@ class Churchill(Component):
         f = 8.0 * ((8.0 / Re) ** 12 + (A + B) ** (-1.5)) ** (1.0 / 12.0)
 
         self.friction_factor.value = f
+
+
+    @property
+    def ignored_export_attributes(self) -> set[str]:
+        return super().ignored_export_attributes | {
+            "Deff",
+        }
+
