@@ -101,8 +101,9 @@ class IsentropicAreaChange(Component):
     11) Total enthalpy is calculated from the ideal-gas stagnation temperature
     12) This is an explicit component; it does not add residuals to force
         consistency with an independently solved downstream node
-    13) To ensure consistency with a downstream node, assign the downstream
-        node directly from this component's outputs or ratio outputs
+    13) To ensure consistency with a downstream node when solving based on
+        exit area, assign the downstream node directly from this component's 
+        outputs or ratio outputs
     14) This component does not model shocks, friction, heat transfer, choking
         losses, or non-isentropic pressure loss
     """
@@ -426,8 +427,8 @@ class ChokedFannoFlow(Component):
     10) Total enthalpy can only be given if static enthalpy is
         provided
     11) To ensure consistency with upstream node, the downstream
-        node should directly be assigned based on the ratio
-        outputs from this class
+        node should be directly assigned based on the ratio
+        outputs from this class and should not be an iterative node
     """
 
     def __init__(
@@ -616,6 +617,9 @@ class ChokedRayleighFlow(Component):
         diagnostically and does not determine the Mach number.
     15) If upstream Mach number is not provided, the heat_rate determines
         the upstream Mach number through the Rayleigh choking relation.
+    16) To ensure consistency with upstream node, the downstream
+        node should be directly assigned based on the ratio
+        outputs from this class and should not be an iterative node
     """
     def __init__(
         self,
