@@ -508,7 +508,7 @@ class CompressibleFlowTube(Component):
         self.setup()
 
     def evaluate_states(self):
-        mdot = self.mass_flow.values
+        mdot = self.mass_flow.value
         p1 = self.upstream_static_pressure.value
         rho1 = self.upstream_density.value
         h1 = self.upstream_static_enthalpy.value
