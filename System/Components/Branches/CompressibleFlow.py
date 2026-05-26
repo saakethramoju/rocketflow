@@ -489,9 +489,9 @@ class CompressibleFlowTube(Component):
         downstream_static_pressure: State,
         downstream_static_temperature: State,
         downstream_density: State,
-        friction_factor: float,
         length: float,
         inner_diameter: float,
+        friction_factor: float | None = None,
         upstream_static_enthalpy: State | None = None,
         upstream_speed_of_sound: State | None = None,
         downstream_speed_of_sound: State | None = None,
@@ -508,7 +508,7 @@ class CompressibleFlowTube(Component):
         self.setup()
 
     def evaluate_states(self):
-        mdot = self.mass_flow.value
+        mdot = self.mass_flow.values
         p1 = self.upstream_static_pressure.value
         rho1 = self.upstream_density.value
         h1 = self.upstream_static_enthalpy.value
@@ -552,11 +552,15 @@ class CompressibleFlowTube(Component):
             self.downstream_total_temperature.value = self.downstream_static_temperature.value * (1 + 0.5 * (k - 1) * M2**2)
             self.downstream_total_pressure.value = p2 * (1 + 0.5 * (k - 1) * M2**2)**(k / (k - 1))      
 
-        Kf = 8 * f * L / (rho1 * np.pi**2 * D**5)
 
         inertia = max(mdot, 0.0) * (u2 - u1) - max(-mdot, 0.0) * (u1 - u2)
         pressure = (p1 - p2) * A
-        friction = Kf * mdot * np.abs(mdot) * A
+
+        if not self.friction_factor.is_assigned:
+            friction = 0
+        else:
+            Kf = 8 * f * L / (rho1 * np.pi**2 * D**5)
+            friction = Kf * mdot * np.abs(mdot) * A
 
 
         self._residual = pressure - friction - inertia
