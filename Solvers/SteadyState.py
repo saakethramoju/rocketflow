@@ -3,6 +3,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.optimize import least_squares, Bounds, root
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich import box
+
 
 if TYPE_CHECKING:
     from System import Network
@@ -12,13 +17,395 @@ class SteadyState:
 
     def __init__(self, network: Network):
         self.network = network
-    '''
+        self.console = Console()
+
+    def residual(self, x: np.ndarray) -> np.ndarray:
+        self.network.assign_iteration_values(list(x))
+
+        try:
+            self.network.evaluate_states()
+            return np.array(self.network.residuals, dtype=float)
+
+        except Exception as e:
+
+            raise RuntimeError(
+                "Solver encountered an error while evaluating the network "
+                "inside network.evaluate_states().\n\n"
+                f"Original error:\n{type(e).__name__}: {e}"
+            ) from e
+
+    def static_evaluate(
+        self,
+        filename: str | None = None,
+        return_type: str = "dict",
+        verbose: bool = False,
+        print_solution: bool = False,
+    ):
+        """
+        Evaluate a static network without nonlinear solving.
+
+        Runs pre_evaluation() and evaluate_states(), then saves/returns
+        the network state.
+        """
+        self.network.pre_evaluation()
+        self.network.evaluate_states()
+
+        if verbose:
+            self._verbose_static_print()
+
+        solution = self.network.save(
+            filename=filename,
+            return_type=return_type,
+        )
+
+        if print_solution:
+            self.print_solution()
+
+        return solution
+
+    def solve(
+        self,
+        filename: str | None = None,
+        return_type: str = "dict",
+        verbose: bool = False,
+        static: bool = False,
+        print_solution: bool = False,
+        solver_method: str = "trf",
+        jacobian_method: str = "3-point",
+        ftol: float = 1e-8,
+        xtol: float = 1e-8,
+        gtol: float = 1e-8,
+        rtol: float = 1e-2,
+    ):
+
+        if static:
+            return self.static_evaluate(
+                filename=filename,
+                return_type=return_type,
+                verbose=verbose,
+                print_solution=print_solution,
+            )
+
+        method = solver_method.lower()
+
+        valid_solver_methods = ("trf", "dogbox", "lm")
+
+        if method not in valid_solver_methods:
+            raise ValueError(
+                "solver_method must be one of "
+                f"{valid_solver_methods}. "
+                f"Got '{solver_method}'."
+            )
+
+        jac = jacobian_method.lower()
+
+        valid_jac_methods = ("2-point", "3-point")
+
+        if jac not in valid_jac_methods:
+            raise ValueError(
+                "jacobian_method must be one of "
+                f"{valid_jac_methods}. "
+                f"Got '{jacobian_method}'."
+            )
+
+        if rtol <= 0.0:
+            raise ValueError(
+                f"Residual tolerance (rtol) must be positive. "
+                f"Got {rtol}"
+            )
+
+        self.network.pre_evaluation()
+
+        x0 = np.array(
+            self.network.iteration_values,
+            dtype=float,
+        )
+
+        self.network.evaluate_states()
+
+        r0 = np.array(
+            self.network.residuals,
+            dtype=float,
+        )
+
+        no_iteration_variables = len(x0) == 0
+        no_residuals = len(r0) == 0
+
+        if no_iteration_variables and no_residuals:
+            return self.static_evaluate(
+                filename=filename,
+                return_type=return_type,
+                verbose=verbose,
+                print_solution=print_solution,
+            )
+
+        if len(r0) < len(x0):
+            raise ValueError(
+                "SteadyState solve requires at least as many "
+                "residuals as iteration variables. "
+                f"Got {len(x0)} iteration variables "
+                f"and {len(r0)} residuals."
+            )
+
+        overconstrained = len(r0) > len(x0)
+
+        bounds = Bounds(
+            self.network.lower_bounds,
+            self.network.upper_bounds,
+            self.network.keep_feasible,
+        )
+
+        sol = least_squares(
+            fun=self.residual,
+            x0=x0,
+            method=method,
+            bounds=bounds,
+            x_scale='jac',
+            jac=jac,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+        )
+
+        if verbose:
+            self._verbose_print(
+                sol=sol,
+                method=method,
+                jac=jac,
+                ftol=ftol,
+                xtol=xtol,
+                gtol=gtol,
+                rtol=rtol,
+                overconstrained=overconstrained,
+            )
+
+        final_residual = np.array(
+            sol.fun,
+            dtype=float,
+        )
+
+        max_residual = np.max(np.abs(final_residual))
+
+        if (
+            not sol.success
+            or max_residual > rtol
+        ):
+            raise RuntimeError(
+                "Steady-state solve failed or converged "
+                "to unacceptable residuals.\n"
+                f"success = {sol.success}\n"
+                f"message = {sol.message}\n"
+                f"max |residual| = {max_residual:.3e}\n"
+                f"residual tolerance = {rtol:.3e}"
+            )
+
+        self.network.assign_iteration_values(
+            list(sol.x)
+        )
+
+        self.network.evaluate_states()
+
+        solution = self.network.save(
+            filename=filename,
+            return_type=return_type,
+        )
+
+        if print_solution:
+            self.print_solution()
+
+        return solution
+
+    def print_solution(self) -> None:
+
+        records = self.network.save(return_type="dict")
+
+        table = Table(
+            title=f"{self.network.name} Solution",
+            box=box.SIMPLE_HEAVY,
+            show_header=True,
+            header_style="bold",
+        )
+
+        table.add_column("Component", style="cyan", no_wrap=True)
+        table.add_column("Type", style="magenta", no_wrap=True)
+        table.add_column("Attribute", style="green", no_wrap=True)
+        table.add_column("Value", justify="right")
+
+        for record in records:
+            value = record["value"]
+
+            if isinstance(value, float):
+                value_text = f"{value:.6g}"
+            else:
+                value_text = str(value)
+
+            if value_text == "<uninitialized>":
+                value_text = "[dim]<uninitialized>[/dim]"
+
+            elif value_text == "<unavailable>":
+                value_text = "[red]<unavailable>[/red]"
+
+            table.add_row(
+                str(record["component_name"]),
+                str(record["component_type"]),
+                str(record["attribute"]),
+                value_text,
+            )
+
+        self.console.print()
+        self.console.print(table)
+        self.console.print()
+
+    def _verbose_static_print(self) -> None:
+
+        table = Table(
+            title="Static Network Evaluation",
+            box=box.SIMPLE_HEAVY,
+            show_header=True,
+            header_style="bold",
+        )
+
+        table.add_column("Quantity", style="bold")
+        table.add_column("Value", justify="right")
+
+        table.add_row("Mode", "Static evaluation")
+        table.add_row("Nonlinear solve", "Not performed")
+        table.add_row("Components", str(len(self.network.components)))
+        table.add_row(
+            "Iteration variables",
+            str(len(self.network.iteration_variables)),
+        )
+        table.add_row("Residuals", str(len(self.network.residuals)))
+
+        self.console.print()
+        self.console.print(table)
+        self.console.print()
+
+    def _verbose_print(
+        self,
+        sol,
+        method: str,
+        jac: str,
+        ftol: float,
+        xtol: float,
+        gtol: float,
+        rtol: float,
+        overconstrained: bool = False,
+    ) -> None:
+
+        max_residual = np.max(np.abs(sol.fun))
+        rms_residual = np.sqrt(np.mean(sol.fun**2))
+
+        summary = Table(
+            title="Steady-State Solver Summary",
+            box=box.SIMPLE_HEAVY,
+            show_header=True,
+            header_style="bold",
+        )
+
+        summary.add_column("Quantity", style="bold")
+        summary.add_column("Value", justify="right")
+
+        summary.add_row("Success", str(sol.success))
+        summary.add_row("Status", str(sol.status))
+        summary.add_row("Message", str(sol.message))
+
+        if overconstrained:
+            summary.add_row(
+                "Warning",
+                "System is overconstrained",
+                style="yellow",
+            )
+
+        summary.add_row("Solver method", method)
+        summary.add_row("Jacobian method", jac)
+        summary.add_row("Function evaluations", str(sol.nfev))
+
+        if hasattr(sol, "njev") and sol.njev is not None:
+            summary.add_row("Jacobian evaluations", str(sol.njev))
+
+        if hasattr(sol, "cost"):
+            summary.add_row("Cost", f"{sol.cost:.6e}")
+
+        if hasattr(sol, "optimality"):
+            summary.add_row("Optimality", f"{sol.optimality:.3e}")
+
+        summary.add_row("Max |residual|", f"{max_residual:.3e}")
+        summary.add_row("RMS residual", f"{rms_residual:.3e}")
+        summary.add_row("Residual tolerance", f"{rtol:.3e}")
+        summary.add_row("ftol", f"{ftol:.3e}")
+        summary.add_row("xtol", f"{xtol:.3e}")
+        summary.add_row("gtol", f"{gtol:.3e}")
+
+        variables = Table(
+            title="Solution Variables",
+            box=box.SIMPLE,
+            show_header=True,
+            header_style="bold",
+        )
+
+        variables.add_column("Index", justify="right")
+        variables.add_column("Variable")
+        variables.add_column("Value", justify="right")
+
+        iter_vars = self.network.iteration_variables
+
+        if len(iter_vars) == len(sol.x):
+
+            for i, (var, val) in enumerate(
+                zip(iter_vars, sol.x)
+            ):
+                variables.add_row(
+                    f"x[{i}]",
+                    str(var),
+                    f"{val:.6e}",
+                )
+
+        else:
+
+            for i, val in enumerate(sol.x):
+                variables.add_row(
+                    f"x[{i}]",
+                    "",
+                    f"{val:.6e}",
+                )
+
+        residuals = Table(
+            title="Residuals",
+            box=box.SIMPLE,
+            show_header=True,
+            header_style="bold",
+        )
+
+        residuals.add_column("Index", justify="right")
+        residuals.add_column("Value", justify="right")
+
+        for i, r in enumerate(sol.fun):
+            residuals.add_row(
+                f"r[{i}]",
+                f"{r:.6e}",
+            )
+
+        self.console.print()
+        self.console.print(summary)
+        self.console.print(variables)
+        self.console.print(residuals)
+        self.console.print()
+
+
+
+'''
+class SteadyStateOld:
+
+    def __init__(self, network: Network):
+        self.network = network
+    """
     def residual(self, x: np.ndarray) -> np.ndarray:
         self.network.assign_iteration_values(list(x))
         # self.network.pre_evaluation()
         self.network.evaluate_states()
         return np.array(self.network.scaled_residuals, dtype=float)
-    '''
+    """
 
     def residual(self, x: np.ndarray) -> np.ndarray:
         self.network.assign_iteration_values(list(x))
@@ -218,3 +605,4 @@ class SteadyState:
         print(f"  RMS residual   : {rms_resid:.3e}")
 
         print("=" * 50 + "\n")
+'''

@@ -711,9 +711,10 @@ solution = SteadyState(PumpNetwork).solve(
     return_type="dataframe",
     verbose=True,
     static=False,
+    print_solution=True
 )
 
-print(solution.to_string(index=False))
+#print(solution.to_string(index=False))
 
 
 print("\n" + "="*50)
