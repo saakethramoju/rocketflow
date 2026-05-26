@@ -273,176 +273,6 @@ class IsentropicAreaChange(Component):
 
 
 
-class ChokedFannoFlow(Component):
-    """
-    Notes
-    -----------
-    1) Forward flow only
-    3) Constant friction factor
-    4) Ideal gas
-    5) Circular duct
-    6) If M1 is provided, it will be used to calculate ratios
-    7) If M1 is not provided, it will be calculated from
-       friction factor, length, and diameter
-    8) Ratios are all downstream to upstream
-    9) Supersonic flow tends to be biased towards shorter tubes,
-       larger diameters, or smaller friction factors
-    10) Total enthalpy can only be given if static enthalpy is
-        provided
-    11) To ensure consistency with upstream node, the downstream
-        node should directly be assigned based on the ratio
-        outputs from this class
-    """
-
-    def __init__(
-        self,
-        name: str,
-        network: Network,
-        upstream_density: State,
-        upstream_speed_of_sound: State,
-        specific_heat_ratio: State,
-        friction_factor: State,
-        length: float,
-        inner_diameter: float,
-        upstream_static_enthalpy: State | None = None,
-        regime: str = "subsonic",
-        upstream_mach_number: State | None = None,
-
-        mass_flux: State | None = None,
-        mass_flow: State | None = None,
-        total_enthalpy: State | None = None,
-        downstream_mach_number=1.0,
-        static_temperature_ratio: State | None = None,
-        static_pressure_ratio: State | None = None,
-        density_ratio: State | None = None,
-        velocity_ratio: State | None = None,
-        total_pressure_ratio: State | None = None,
-        total_temperature_ratio=1.0,
-    ):
-        self._use_given_mach = upstream_mach_number is not None
-        self.setup()
-
-        temp = self.regime
-        self.regime = self.regime.lower()
-
-        if self.regime not in ("subsonic", "supersonic"):
-            raise ValueError(
-                f"Regime must be 'subsonic' or 'supersonic', got {temp}"
-            )
-    
-
-    def evaluate_states(self):
-        k = self.specific_heat_ratio.value
-        rho1 = self.upstream_density.value
-        a1 = self.upstream_speed_of_sound.value
-        L = self.length.value
-        D = self.inner_diameter.value
-        f = self.friction_factor.value
-        A = (np.pi / 4.0) * D**2
-
-        if self._use_given_mach:
-            M1 = self.upstream_mach_number.value
-            self._validate_mach_regime(M1)
-        else:
-            fL_D = f * L / D
-            M1 = self._inverse_fanno_function(fL_D, k, self.regime)
-            self.upstream_mach_number.value = M1
-
-        G = rho1 * M1 * a1
-        mdot = G * A
-
-        self.mass_flux.value = G
-        self.mass_flow.value = mdot
-        self.upstream_mach_number.value = M1
-
-        if self.upstream_static_enthalpy.is_assigned:
-            h1 = self.upstream_static_enthalpy.value
-            v1 = M1 * a1
-            self.total_enthalpy.value = h1 + 0.5 * v1**2
-
-        M2 = self.downstream_mach_number.value
-
-        T2_T1 = (1 + 0.5 * (k - 1) * M1**2) / (1 + 0.5 * (k - 1) * M2**2)
-        rho2_rho1 = (M1 / M2) * np.sqrt(1 / T2_T1)
-        p2_p1 = rho2_rho1 * T2_T1
-        v2_v1 = 1 / rho2_rho1
-        po2_po1 = (M1 / M2) * T2_T1**((k + 1) / (2 * (1 - k)))
-
-        self.static_temperature_ratio.value = T2_T1
-        self.static_pressure_ratio.value = p2_p1
-        self.density_ratio.value = rho2_rho1
-        self.velocity_ratio.value = v2_v1
-        self.total_pressure_ratio.value = po2_po1
-        self.total_temperature_ratio.value = 1.0
-
-    def _validate_mach_regime(self, M: float) -> None:
-        if self.regime == "subsonic" and M >= 1.0:
-            raise ValueError(f"Subsonic Fanno flow requires M1 < 1. Got M1={M:.6g}.")
-
-        if self.regime == "supersonic" and M <= 1.0:
-            raise ValueError(f"Supersonic Fanno flow requires M1 > 1. Got M1={M:.6g}.")
-
-    def _fanno_function(self, M: float, k: float) -> float:
-        return (
-            (1.0 - M**2) / (k * M**2)
-            + (k + 1.0) / (2.0 * k)
-            * np.log(((k + 1.0) * M**2) / (2.0 + (k - 1.0) * M**2))
-        )
-
-    def _valid_fanno_geometry_message(self, target: float, k: float, branch: str) -> str:
-        f = self.friction_factor.value
-        L = self.length.value
-        D = self.inner_diameter.value
-        current = f * L / D
-
-        if branch == "supersonic":
-            M_limit = 10.0
-            target_limit = self._fanno_function(M_limit, k)
-            direction = "shorter tube, larger diameter, or lower friction factor"
-        elif branch == "subsonic":
-            M_limit = 1e-6
-            target_limit = self._fanno_function(M_limit, k)
-            direction = "longer tube, smaller diameter, or higher friction factor"
-        else:
-            raise ValueError("branch must be 'subsonic' or 'supersonic'")
-
-        valid_L = target_limit * D / f
-        valid_D = f * L / target_limit
-
-        return (
-            f"No valid {branch} Fanno solution for fL/D={current:.6g}, k={k:.6g}.\n"
-            f"Current geometry: L={L:.6g} m, D={D:.6g} m, f={f:.6g}.\n"
-            f"Try a {direction}.\n"
-            f"At current D and f, use approximately L <= {valid_L:.6g} m.\n"
-            f"At current L and f, use approximately D >= {valid_D:.6g} m."
-        )
-
-    def _inverse_fanno_function(self, target: float, k: float, branch: str = "subsonic") -> float:
-        if target <= 0.0:
-            return 1.0
-
-        c = (k + 1.0) / 2.0
-        B = 1.0 + (k / c) * target
-
-        if branch == "subsonic":
-            u = wrightomega(B)
-        elif branch == "supersonic":
-            u = -np.real(lambertw(-np.exp(-B), k=0))
-        else:
-            raise ValueError("branch must be 'subsonic' or 'supersonic'")
-
-        x = c * u - (k - 1.0) / 2.0
-
-        if x <= 0.0 or not np.isfinite(x):
-            raise ValueError(self._valid_fanno_geometry_message(target, k, branch))
-
-        return float(1.0 / np.sqrt(x))
-
-
-
-
-
-
 
 class CompressibleFlowTube(Component):
     """
@@ -573,3 +403,469 @@ class CompressibleFlowTube(Component):
     @property
     def residuals(self) -> list[float]:
         return [self._residual]
+
+
+
+
+
+
+class ChokedFannoFlow(Component):
+    """
+    Notes
+    -----------
+    1) Forward flow only
+    3) Constant friction factor
+    4) Ideal gas
+    5) Circular duct
+    6) If M1 is provided, it will be used to calculate ratios
+    7) If M1 is not provided, it will be calculated from
+       friction factor, length, and diameter
+    8) Ratios are all downstream to upstream
+    9) Supersonic flow tends to be biased towards shorter tubes,
+       larger diameters, or smaller friction factors
+    10) Total enthalpy can only be given if static enthalpy is
+        provided
+    11) To ensure consistency with upstream node, the downstream
+        node should directly be assigned based on the ratio
+        outputs from this class
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        upstream_density: State,
+        upstream_speed_of_sound: State,
+        specific_heat_ratio: State,
+        friction_factor: State,
+        length: float,
+        inner_diameter: float,
+        upstream_static_enthalpy: State | None = None,
+        regime: str = "subsonic",
+        upstream_mach_number: State | None = None,
+
+        mass_flux: State | None = None,
+        mass_flow: State | None = None,
+        total_enthalpy: State | None = None,
+        downstream_mach_number=1.0,
+        static_temperature_ratio: State | None = None,
+        static_pressure_ratio: State | None = None,
+        density_ratio: State | None = None,
+        velocity_ratio: State | None = None,
+        total_pressure_ratio: State | None = None,
+        total_temperature_ratio=1.0,
+        friction_factor_to_choke: State | None = None,
+        fL_over_D_to_choke: State | None = None
+    ):
+        self._use_given_mach = upstream_mach_number is not None
+        self.setup()
+
+        temp = self.regime
+        self.regime = self.regime.lower()
+
+        if self.regime not in ("subsonic", "supersonic"):
+            raise ValueError(
+                f"Regime must be 'subsonic' or 'supersonic', got {temp}"
+            )
+    
+
+    def evaluate_states(self):
+        k = self.specific_heat_ratio.value
+        rho1 = self.upstream_density.value
+        a1 = self.upstream_speed_of_sound.value
+        L = self.length.value
+        D = self.inner_diameter.value
+        f = self.friction_factor.value
+        A = (np.pi / 4.0) * D**2
+
+        if self._use_given_mach:
+            M1 = self.upstream_mach_number.value
+            self._validate_mach_regime(M1)
+        else:
+            fL_D = f * L / D
+            M1 = self._inverse_fanno_function(fL_D, k, self.regime)
+            self.upstream_mach_number.value = M1
+
+        fL_D_to_choke = self._fanno_function(M1, k)
+        self.fL_over_D_to_choke.value = fL_D_to_choke
+        self.friction_factor_to_choke.value = fL_D_to_choke * D / L
+
+        G = rho1 * M1 * a1
+        mdot = G * A
+
+        self.mass_flux.value = G
+        self.mass_flow.value = mdot
+        self.upstream_mach_number.value = M1
+
+        if self.upstream_static_enthalpy.is_assigned:
+            h1 = self.upstream_static_enthalpy.value
+            v1 = M1 * a1
+            self.total_enthalpy.value = h1 + 0.5 * v1**2
+
+        M2 = self.downstream_mach_number.value
+
+        T2_T1 = (1 + 0.5 * (k - 1) * M1**2) / (1 + 0.5 * (k - 1) * M2**2)
+        rho2_rho1 = (M1 / M2) * np.sqrt(1 / T2_T1)
+        p2_p1 = rho2_rho1 * T2_T1
+        v2_v1 = 1 / rho2_rho1
+        po2_po1 = (M1 / M2) * T2_T1**((k + 1) / (2 * (1 - k)))
+
+        self.static_temperature_ratio.value = T2_T1
+        self.static_pressure_ratio.value = p2_p1
+        self.density_ratio.value = rho2_rho1
+        self.velocity_ratio.value = v2_v1
+        self.total_pressure_ratio.value = po2_po1
+        self.total_temperature_ratio.value = 1.0
+
+    def _validate_mach_regime(self, M: float) -> None:
+        if self.regime == "subsonic" and M >= 1.0:
+            raise ValueError(f"Subsonic Fanno flow requires M1 < 1. Got M1={M:.6g}.")
+
+        if self.regime == "supersonic" and M <= 1.0:
+            raise ValueError(f"Supersonic Fanno flow requires M1 > 1. Got M1={M:.6g}.")
+
+    def _fanno_function(self, M: float, k: float) -> float:
+        return (
+            (1.0 - M**2) / (k * M**2)
+            + (k + 1.0) / (2.0 * k)
+            * np.log(((k + 1.0) * M**2) / (2.0 + (k - 1.0) * M**2))
+        )
+
+    def _valid_fanno_geometry_message(self, target: float, k: float, branch: str) -> str:
+        f = self.friction_factor.value
+        L = self.length.value
+        D = self.inner_diameter.value
+        current = f * L / D
+
+        if branch == "supersonic":
+            M_limit = 10.0
+            target_limit = self._fanno_function(M_limit, k)
+            direction = "shorter tube, larger diameter, or lower friction factor"
+        elif branch == "subsonic":
+            M_limit = 1e-6
+            target_limit = self._fanno_function(M_limit, k)
+            direction = "longer tube, smaller diameter, or higher friction factor"
+        else:
+            raise ValueError("branch must be 'subsonic' or 'supersonic'")
+
+        valid_L = target_limit * D / f
+        valid_D = f * L / target_limit
+
+        return (
+            f"No valid {branch} Fanno solution for fL/D={current:.6g}, k={k:.6g}.\n"
+            f"Current geometry: L={L:.6g} m, D={D:.6g} m, f={f:.6g}.\n"
+            f"Try a {direction}.\n"
+            f"At current D and f, use approximately L <= {valid_L:.6g} m.\n"
+            f"At current L and f, use approximately D >= {valid_D:.6g} m."
+        )
+
+    def _inverse_fanno_function(self, target: float, k: float, branch: str = "subsonic") -> float:
+        if target <= 0.0:
+            return 1.0
+
+        c = (k + 1.0) / 2.0
+        B = 1.0 + (k / c) * target
+
+        if branch == "subsonic":
+            u = wrightomega(B)
+        elif branch == "supersonic":
+            u = -np.real(lambertw(-np.exp(-B), k=0))
+        else:
+            raise ValueError("branch must be 'subsonic' or 'supersonic'")
+
+        x = c * u - (k - 1.0) / 2.0
+
+        if x <= 0.0 or not np.isfinite(x):
+            raise ValueError(self._valid_fanno_geometry_message(target, k, branch))
+
+        return float(1.0 / np.sqrt(x))
+    
+
+
+
+
+
+
+
+class ChokedRayleighFlow(Component):
+    """
+    Notes
+    -----
+    1) Forward flow only.
+    2) Frictionless Rayleigh flow.
+    3) Ideal gas with constant specific heat ratio.
+    4) Constant-area duct.
+    5) Downstream state is the Rayleigh star (choked) state, so M2 = 1.
+    6) If upstream Mach number is provided, the component explicitly computes
+    the Rayleigh choking ratios and required heat addition to reach the
+    star state.
+    7) If upstream Mach number is not provided, the specified heat_rate is
+    used to infer the upstream Mach number that would choke at the
+    downstream state.
+    8) This component models Rayleigh choking through heat addition.
+    Positive heat_rate adds energy to the flow.
+    9) Ratios are downstream-to-upstream, where downstream corresponds to
+    the Rayleigh star state.
+    10) Total enthalpy changes according to:
+            q = heat_rate / mass_flow
+    11) Total pressure decreases through Rayleigh flow because heat transfer
+        generates entropy.
+    12) For subsonic flow, heat addition accelerates the flow toward choking.
+    13) For supersonic flow, heat addition decelerates the flow toward choking.
+    14) If upstream Mach number is provided, the heat_rate input is treated
+        diagnostically and does not determine the Mach number.
+    15) If upstream Mach number is not provided, the heat_rate determines
+        the upstream Mach number through the Rayleigh choking relation.
+    """
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        upstream_density: State,
+        upstream_speed_of_sound: State,
+        upstream_static_temperature: State,
+        specific_heat_ratio: State,
+        specific_gas_constant: State,
+        inner_diameter: float,
+        heat_rate: State | float | None = None,
+        upstream_static_enthalpy: State | None = None,
+        regime: str = "subsonic",
+        upstream_mach_number: State | None = None,
+
+        mass_flux: State | None = None,
+        mass_flow: State | None = None,
+        total_enthalpy_in: State | None = None,
+        total_enthalpy_out: State | None = None,
+        downstream_mach_number: State | float = 1.0,
+        static_temperature_ratio: State | None = None,
+        static_pressure_ratio: State | None = None,
+        density_ratio: State | None = None,
+        velocity_ratio: State | None = None,
+        total_temperature_ratio: State | None = None,
+        total_pressure_ratio: State | None = None,
+        heat_per_mass: State | None = None,
+        heat_rate_to_choke: State | None = None,
+        heat_per_mass_to_choke: State | None = None,
+    ):
+        self._use_given_mach = upstream_mach_number is not None
+        self.setup()
+
+        original_regime = self.regime
+        self.regime = self.regime.lower()
+
+        if self.regime not in ("subsonic", "supersonic"):
+            raise ValueError(
+                f"Regime must be 'subsonic' or 'supersonic', got {original_regime}"
+            )
+
+    def evaluate_states(self):
+        k = self.specific_heat_ratio.value
+        R = self.specific_gas_constant.value
+        cp = k * R / (k - 1.0)
+
+        rho1 = self.upstream_density.value
+        a1 = self.upstream_speed_of_sound.value
+        T1 = self.upstream_static_temperature.value
+
+        D = self.inner_diameter.value
+        A = (np.pi / 4.0) * D**2
+
+        if self._use_given_mach:
+            M1 = self.upstream_mach_number.value
+            self._validate_mach_regime(M1)
+        else:
+            if not self.heat_rate.is_assigned:
+                raise ValueError(
+                    f"{self.name}: heat_rate is required when "
+                    "upstream_mach_number is not provided."
+                )
+
+            M1 = self._mach_from_choking_heat_rate(
+                qdot=self.heat_rate.value,
+                rho1=rho1,
+                a1=a1,
+                A=A,
+                T1=T1,
+                cp=cp,
+                k=k,
+                regime=self.regime,
+            )
+
+            self.upstream_mach_number.value = M1
+
+        G = rho1 * M1 * a1
+        mdot = G * A
+
+        self.mass_flux.value = G
+        self.mass_flow.value = mdot
+        self.downstream_mach_number.value = 1.0
+
+        T01 = T1 * (1.0 + 0.5 * (k - 1.0) * M1**2)
+        T01_T0star = self._rayleigh_total_temperature_ratio_to_star(M1, k)
+        T0star = T01 / T01_T0star
+
+        q_to_choke = cp * (T0star - T01)
+        qdot_to_choke = mdot * q_to_choke
+
+        self.heat_per_mass_to_choke.value = q_to_choke
+        self.heat_rate_to_choke.value = qdot_to_choke
+
+        if self.heat_rate.is_assigned:
+            q = self.heat_rate.value / mdot
+        else:
+            q = q_to_choke
+
+        self.heat_per_mass.value = q
+
+        if self.upstream_static_enthalpy.is_assigned:
+            h1 = self.upstream_static_enthalpy.value
+            u1 = M1 * a1
+            h01 = h1 + 0.5 * u1**2
+
+            self.total_enthalpy_in.value = h01
+            self.total_enthalpy_out.value = h01 + q
+
+        pstar_p1 = (1.0 + k * M1**2) / (1.0 + k)
+
+        Tstar_T1 = (
+            ((1.0 + k) * M1)
+            / (1.0 + k * M1**2)
+        ) ** 2
+
+        rhostar_rho1 = (
+            (1.0 + k) * M1**2
+            / (1.0 + k * M1**2)
+        )
+
+        vstar_v1 = 1.0 / rhostar_rho1
+
+        T0star_T01 = 1.0 / T01_T0star
+
+        p01_p0star = self._rayleigh_total_pressure_ratio_to_star(M1, k)
+        p0star_p01 = 1.0 / p01_p0star
+
+        self.static_pressure_ratio.value = pstar_p1
+        self.static_temperature_ratio.value = Tstar_T1
+        self.density_ratio.value = rhostar_rho1
+        self.velocity_ratio.value = vstar_v1
+        self.total_temperature_ratio.value = T0star_T01
+        self.total_pressure_ratio.value = p0star_p01
+
+    def _validate_mach_regime(self, M: float) -> None:
+        if self.regime == "subsonic" and not (0.0 < M < 1.0):
+            raise ValueError(
+                f"Subsonic Rayleigh flow requires 0 < M1 < 1. Got M1={M:.6g}."
+            )
+
+        if self.regime == "supersonic" and M <= 1.0:
+            raise ValueError(
+                f"Supersonic Rayleigh flow requires M1 > 1. Got M1={M:.6g}."
+            )
+
+    def _rayleigh_total_temperature_ratio_to_star(self, M: float, k: float) -> float:
+        return (
+            (2.0 + (k - 1.0) * M**2)
+            * (1.0 + k)
+            * M**2
+            / (1.0 + k * M**2) ** 2
+        )
+
+    def _rayleigh_total_pressure_ratio_to_star(self, M: float, k: float) -> float:
+        return (
+            ((2.0 + (k - 1.0) * M**2) / (1.0 + k)) ** (k / (k - 1.0))
+            * ((1.0 + k) / (1.0 + k * M**2))
+        )
+
+    def _q_to_choke_per_mass(self, M: float, T1: float, cp: float, k: float) -> float:
+        T01 = T1 * (1.0 + 0.5 * (k - 1.0) * M**2)
+        T01_T0star = self._rayleigh_total_temperature_ratio_to_star(M, k)
+        T0star = T01 / T01_T0star
+
+        return cp * (T0star - T01)
+        
+    def _valid_rayleigh_heat_message(
+        self,
+        qdot: float,
+        rho1: float,
+        a1: float,
+        A: float,
+        T1: float,
+        cp: float,
+        k: float,
+        regime: str,
+    ) -> str:
+        C = rho1 * a1 * A * cp * T1 / (2.0 * (1.0 + k))
+
+        examples = []
+        for M in [0.2, 0.4, 0.6, 0.8, 0.95]:
+            if regime == "supersonic":
+                M = 1.0 / M
+
+            qdot_to_choke = C * ((1.0 - M**2) ** 2 / M)
+            examples.append((M, qdot_to_choke))
+
+        lines = [
+            f"No valid {regime} Rayleigh choking solution for heat_rate={qdot:.6g} W.",
+            f"Current upstream state gives C={C:.6g} W, where:",
+            "    heat_rate = C * (1 - M1^2)^2 / M1",
+            "",
+            "Compatible example heat rates:",
+        ]
+
+        for M, q in examples:
+            lines.append(f"    M1={M:.4g} -> heat_rate={q:.6g} W")
+
+        return "\n".join(lines)
+
+    def _mach_from_choking_heat_rate(
+        self,
+        qdot: float,
+        rho1: float,
+        a1: float,
+        A: float,
+        T1: float,
+        cp: float,
+        k: float,
+        regime: str,
+    ) -> float:
+        if qdot <= 0.0:
+            raise ValueError(
+                f"{self.name}: Choked Rayleigh flow requires positive heat_rate. "
+                f"Got {qdot:.6g}."
+            )
+
+        C = rho1 * a1 * A * cp * T1 / (2.0 * (1.0 + k))
+        H = qdot / C
+
+        # M^4 - 2 M^2 - H M + 1 = 0
+        coeffs = [1.0, 0.0, -2.0, -H, 1.0]
+        roots = np.roots(coeffs)
+
+        real_roots = [
+            float(r.real)
+            for r in roots
+            if abs(r.imag) < 1e-10 and r.real > 0.0
+        ]
+
+        if regime == "subsonic":
+            candidates = [M for M in real_roots if 0.0 < M < 1.0]
+        elif regime == "supersonic":
+            candidates = [M for M in real_roots if M > 1.0]
+        else:
+            raise ValueError("regime must be 'subsonic' or 'supersonic'")
+
+        if not candidates:
+            raise ValueError(
+                self._valid_rayleigh_heat_message(
+                    qdot=qdot,
+                    rho1=rho1,
+                    a1=a1,
+                    A=A,
+                    T1=T1,
+                    cp=cp,
+                    k=k,
+                    regime=regime,
+                )
+            )
+
+        return candidates[0]
