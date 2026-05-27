@@ -28,3 +28,9 @@ solution = SteadyState(TubeNetwork).solve(
     verbose=True,
     print_solution=True
 )
+
+from Utilities import FluidRegistry
+
+f = {"rp-1": 0.4, "lox": 0.6}
+
+print(FluidRegistry.pyromat_mixture_dict(f))

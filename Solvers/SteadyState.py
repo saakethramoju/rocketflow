@@ -170,6 +170,7 @@ class SteadyState:
         if verbose:
             self._verbose_print(
                 sol=sol,
+                x0=x0,
                 method=method,
                 jac=jac,
                 ftol=ftol,
@@ -284,6 +285,7 @@ class SteadyState:
     def _verbose_print(
         self,
         sol,
+        x0: np.ndarray,
         method: str,
         jac: str,
         ftol: float,
@@ -295,6 +297,12 @@ class SteadyState:
 
         max_residual = np.max(np.abs(sol.fun))
         rms_residual = np.sqrt(np.mean(sol.fun**2))
+
+        dx = np.array(sol.x, dtype=float) - np.array(x0, dtype=float)
+
+        normalized_correction = np.max(
+            np.abs(dx) / np.maximum(np.abs(sol.x), 1.0)
+        )
 
         summary = Table(
             title="Steady-State Solver Summary",
@@ -332,6 +340,7 @@ class SteadyState:
 
         summary.add_row("Max |residual|", f"{max_residual:.3e}")
         summary.add_row("RMS residual", f"{rms_residual:.3e}")
+        summary.add_row("Max normalized correction", f"{normalized_correction:.3e}")
         summary.add_row("Residual tolerance", f"{rtol:.3e}")
         summary.add_row("ftol", f"{ftol:.3e}")
         summary.add_row("xtol", f"{xtol:.3e}")
