@@ -226,9 +226,9 @@ class SteadyState:
             header_style="bold",
         )
 
-        table.add_column("Component", style="cyan", no_wrap=True)
-        table.add_column("Type", style="magenta", no_wrap=True)
-        table.add_column("Attribute", style="green", no_wrap=True)
+        table.add_column("Component", style="#D84135", no_wrap=True)
+        table.add_column("Type", style="#3B629E", no_wrap=True)
+        table.add_column("Attribute", style="#fdf0d5", no_wrap=True)
         table.add_column("Value", justify="right")
 
         for record in records:

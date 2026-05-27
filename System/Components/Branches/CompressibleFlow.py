@@ -862,3 +862,103 @@ class ChokedRayleighFlow(Component):
             )
 
         return candidates[0]
+    
+
+
+
+
+
+
+
+
+
+class StationaryNormalShock(Component):
+    """
+    Notes
+    -----
+    1) Forward flow only.
+    2) Only applies if the shock is stationary in the inertial
+       reference frame. Otherwise, the inlet Mach number must 
+       be transformed with Galilean velocity transformation.
+    3) Assumed to be ideal gas
+    4) If Mach number is assigned, it is better to simply use 
+       the outputs from this class instead of iteration on the 
+       downstream node.
+    """    
+    def __init__(self, 
+                 name: str, 
+                 network: Network,
+                 specific_heat_ratio: State,
+                 upstream_mach_number: State | None = None,
+                 static_pressure_ratio: State | None = None,
+                 
+                 downstream_mach_number: State | None = None,
+                 static_temperature_ratio: State | None = None,
+                 density_ratio: State | None = None,
+                 velocity_ratio: State | None = None,
+                 total_pressure_ratio: State | None = None,
+                 total_temperature_ratio: State | None = 1.0,
+                 sonic_area_ratio: State | None = None):
+        self.setup()
+
+        if self.upstream_mach_number.is_assigned:
+            self._mach_mode = True
+
+            if self.upstream_mach_number.value <= 1.0:
+                raise ValueError(
+                    "Upstream Mach number must be greater than 1.0. "
+                    f"Got {self.upstream_mach_number.value}."
+                )
+
+        elif self.static_pressure_ratio.is_assigned:
+            self._mach_mode = False
+
+            if not (0.0 < self.static_pressure_ratio.value < 1.0):
+                raise ValueError(
+                    "Static pressure ratio must satisfy 0.0 < p1 / p2 < 1.0. "
+                    f"Got {self.static_pressure_ratio.value}."
+                )
+
+        else:
+            raise ValueError(
+                "Either upstream Mach number or static pressure ratio must be assigned."
+            )
+
+    def evaluate_states(self):
+        k = self.specific_heat_ratio.value
+
+        if self._mach_mode:
+            M1 = self.upstream_mach_number.value
+
+            p2_p1 = 1.0 + (2.0 * k / (k + 1.0)) * (M1**2 - 1.0)
+            p1_p2 = 1.0 / p2_p1
+
+            self.static_pressure_ratio.value = p1_p2
+
+        else:
+            p1_p2 = self.static_pressure_ratio.value
+            p2_p1 = 1.0 / p1_p2
+
+            M1 = np.sqrt(1.0 + ((k + 1.0) / (2.0 * k)) * (p2_p1 - 1.0))
+
+            self.upstream_mach_number.value = M1
+
+        M2 = np.sqrt((M1**2 + 2.0 / (k - 1.0)) / ((2.0 * k / (k - 1.0)) * M1**2 - 1.0))
+
+        T2_T1 = (1.0 + 0.5 * (k - 1.0) * M1**2) / (1.0 + 0.5 * (k - 1.0) * M2**2)
+
+        rho2_rho1 = p2_p1 / T2_T1
+        v2_v1 = 1.0 / rho2_rho1
+
+        p02_p01 = (((k + 1.0) * M1**2) / (2.0 + (k - 1.0) * M1**2))**(k / (k - 1.0)) * ((k + 1.0) / (2.0 * k * M1**2 - (k - 1.0)))**(1.0 / (k - 1.0))
+
+        T02_T01 = 1.0
+        A2star_A1star = 1.0 / p02_p01
+
+        self.downstream_mach_number.value = M2
+        self.static_temperature_ratio.value = T2_T1
+        self.density_ratio.value = rho2_rho1
+        self.velocity_ratio.value = v2_v1
+        self.total_pressure_ratio.value = p02_p01
+        self.total_temperature_ratio.value = T02_T01
+        self.sonic_area_ratio.value = A2star_A1star

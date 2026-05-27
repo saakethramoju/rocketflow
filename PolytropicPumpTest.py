@@ -711,7 +711,7 @@ solution = SteadyState(PumpNetwork).solve(
     return_type="dataframe",
     verbose=True,
     static=False,
-    print_solution=False,
+    print_solution=True,
     jacobian_method='3-point'
 )
 
