@@ -2,13 +2,33 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from System import Component, State
 from Utilities import Fluid, FluidRegistry
 
 if TYPE_CHECKING:
     from System import Network
 
+
 class FluidLookup(Component):
+    """
+    CoolProp-backed thermodynamic property lookup component.
+
+    FluidLookup owns a persistent Fluid object and updates it from a selected
+    two-property flash pair, such as pressure-temperature or pressure-enthalpy.
+    The flash inputs are normal State objects, so they may be solver iteration
+    variables or externally shared states.
+
+    Properties requested by other components are exposed as State objects. If a
+    property State is supplied explicitly, it is updated during evaluate_states().
+    If a property is accessed dynamically, a derived State is created.
+
+    To reduce expensive CoolProp calls, the lookup skips the flash when the flash
+    inputs have not changed within tolerance. Property values are also cached after
+    each flash, so repeated reads of density, enthalpy, viscosity, etc. do not
+    re-query the Fluid object. The cache is cleared only when a new flash occurs.
+    """
 
     _THERMO_NAMES = (
         "pressure",
@@ -78,7 +98,6 @@ class FluidLookup(Component):
                 "so the initial fluid state can be defined."
             )
 
-        # ---------- actual flash values used during evaluation ----------
         if flash_values is None:
             self._flash_names = provided_names[:2]
         else:
@@ -109,7 +128,6 @@ class FluidLookup(Component):
                 f"Supported pairs are: {Fluid.available_flash_pairs()}."
             )
 
-        # ---------- initial state used to initialize missing flash values ----------
         initial_flash_names = provided_names[:2]
         initial_flash_key = frozenset(initial_flash_names)
 
@@ -131,12 +149,14 @@ class FluidLookup(Component):
             },
         )
 
+        self._last_flash_values: tuple[float, ...] | None = None
+        self._property_cache: dict[str, float] = {}
+
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
-        # ---------- flash properties are owned assignable States ----------
         for flash_name in self._flash_names:
-            initial_value = getattr(self._Fluid, flash_name)
+            initial_value = self._get_cached_property(flash_name)
 
             state = getattr(self, flash_name, None)
 
@@ -146,8 +166,6 @@ class FluidLookup(Component):
             else:
                 setattr(self, flash_name, State(initial_value))
 
-        # ---------- delete unprovided non-flash placeholders ----------
-        # This lets __getattr__ dynamically create derived property States.
         for prop_name in self._THERMO_NAMES:
             if prop_name in self._flash_names:
                 continue
@@ -155,7 +173,6 @@ class FluidLookup(Component):
             if _input_map[prop_name] is None and prop_name in self.__dict__:
                 delattr(self, prop_name)
 
-        # ---------- provided non-flash thermo states become output States ----------
         for prop_name in self._THERMO_NAMES:
             if prop_name in self._flash_names:
                 continue
@@ -195,9 +212,8 @@ class FluidLookup(Component):
         self._set_fluid_from_flash()
 
         for prop_name in self._external_property_names:
-            self._property_states[prop_name].value = getattr(
-                self._Fluid,
-                prop_name,
+            self._property_states[prop_name].value = self._get_cached_property(
+                prop_name
             )
 
     def __getattr__(self, name: str) -> State:
@@ -212,7 +228,7 @@ class FluidLookup(Component):
 
         if name not in self._property_states:
             self._property_states[name] = State._derived(
-                lambda prop=name: getattr(self._Fluid, prop)
+                lambda prop=name: self._get_cached_property(prop)
             )
 
         return self._property_states[name]
@@ -223,14 +239,47 @@ class FluidLookup(Component):
             frozenset(self._flash_names)
         ]
 
+        flash_values = tuple(
+            getattr(self, prop_name).value
+            for prop_name in ordered_names
+        )
+
+        if self._flash_values_unchanged(flash_values):
+            return
+
         setattr(
             self._Fluid,
             setter_name,
-            tuple(
-                getattr(self, prop_name).value
-                for prop_name in ordered_names
-            ),
+            flash_values,
         )
+
+        self._last_flash_values = flash_values
+        self._property_cache.clear()
+
+    def _flash_values_unchanged(
+        self,
+        flash_values: tuple[float, ...],
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
+    ) -> bool:
+
+        if self._last_flash_values is None:
+            return False
+
+        return all(
+            np.isclose(current, previous, rtol=rtol, atol=atol)
+            for current, previous in zip(
+                flash_values,
+                self._last_flash_values,
+            )
+        )
+
+    def _get_cached_property(self, name: str):
+
+        if name not in self._property_cache:
+            self._property_cache[name] = getattr(self._Fluid, name)
+
+        return self._property_cache[name]
 
     def _is_fluid_property(self, name: str) -> bool:
         return isinstance(
@@ -253,4 +302,8 @@ class FluidLookup(Component):
             "_input_map",
             "coolprop_fluid",
             "_coolprop_fluid",
+            "last_flash_values",
+            "_last_flash_values",
+            "property_cache",
+            "_property_cache",
         }

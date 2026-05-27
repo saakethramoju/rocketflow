@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from System import Component, State
 from Utilities import Fluid, IdealGas, FluidRegistry
 
@@ -10,6 +12,22 @@ if TYPE_CHECKING:
 
 
 class IdealGasLookup(Component):
+    """
+    PYroMat-backed ideal-gas property lookup component.
+
+    IdealGasLookup owns a persistent IdealGas object and updates it from either a
+    single ideal-gas property, such as temperature or enthalpy, or a two-property
+    flash pair, such as pressure-temperature or pressure-enthalpy. The flash inputs
+    are State objects and may be solver iteration variables or shared states.
+
+    The component uses CoolProp only once during initialization to align enthalpy
+    and internal-energy reference values with the real-fluid Fluid wrapper. Runtime
+    property evaluation is handled by the PYroMat-backed IdealGas object.
+
+    To reduce repeated PYroMat work, the lookup skips unchanged flashes and caches
+    property values after each flash. Cached properties are reused until the flash
+    inputs change, at which point the cache is cleared and rebuilt lazily.
+    """
 
     _REFERENCE_TEMPERATURE = 298.15
     _REFERENCE_PRESSURE = 101325.0
@@ -186,6 +204,9 @@ class IdealGasLookup(Component):
             },
         )
 
+        self._last_flash_values: tuple[float, ...] | None = None
+        self._property_cache: dict[str, float] = {}
+
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
@@ -252,7 +273,6 @@ class IdealGasLookup(Component):
         for prop_name in self._external_property_names:
             self._property_states[prop_name].value = self._get_property(prop_name)
 
-
     def __getattr__(self, name: str) -> State:
 
         if "_IdealGas" not in self.__dict__:
@@ -309,14 +329,24 @@ class IdealGasLookup(Component):
         if len(self._flash_names) == 1:
             flash_name = self._flash_names[0]
 
-            setattr(
-                self._IdealGas,
-                flash_name,
+            flash_values = (
                 self._to_ideal_basis(
                     flash_name,
                     getattr(self, flash_name).value,
                 ),
             )
+
+            if self._flash_values_unchanged(flash_values):
+                return
+
+            setattr(
+                self._IdealGas,
+                flash_name,
+                flash_values[0],
+            )
+
+            self._last_flash_values = flash_values
+            self._property_cache.clear()
 
             return
 
@@ -324,16 +354,42 @@ class IdealGasLookup(Component):
             frozenset(self._flash_names)
         ]
 
+        flash_values = tuple(
+            self._to_ideal_basis(
+                prop_name,
+                getattr(self, prop_name).value,
+            )
+            for prop_name in ordered_names
+        )
+
+        if self._flash_values_unchanged(flash_values):
+            return
+
         setattr(
             self._IdealGas,
             setter_name,
-            tuple(
-                self._to_ideal_basis(
-                    prop_name,
-                    getattr(self, prop_name).value,
-                )
-                for prop_name in ordered_names
-            ),
+            flash_values,
+        )
+
+        self._last_flash_values = flash_values
+        self._property_cache.clear()
+
+    def _flash_values_unchanged(
+        self,
+        flash_values: tuple[float, ...],
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
+    ) -> bool:
+
+        if self._last_flash_values is None:
+            return False
+
+        return all(
+            np.isclose(current, previous, rtol=rtol, atol=atol)
+            for current, previous in zip(
+                flash_values,
+                self._last_flash_values,
+            )
         )
 
     def _to_ideal_basis(self, name: str, value: float) -> float:
@@ -376,9 +432,11 @@ class IdealGasLookup(Component):
                 f"{name!r} requires pressure, but pressure is not available."
             )
 
-        value = getattr(self._IdealGas, name)
+        if name not in self._property_cache:
+            value = getattr(self._IdealGas, name)
+            self._property_cache[name] = self._from_ideal_basis(name, value)
 
-        return self._from_ideal_basis(name, value)
+        return self._property_cache[name]
 
     def _requires_pressure(self, name: str) -> bool:
         return name in self._PRESSURE_REQUIRED_PROPERTIES
@@ -412,4 +470,8 @@ class IdealGasLookup(Component):
             "_reference_internal_energy",
             "input_map",
             "_input_map",
+            "last_flash_values",
+            "_last_flash_values",
+            "property_cache",
+            "_property_cache",
         }
