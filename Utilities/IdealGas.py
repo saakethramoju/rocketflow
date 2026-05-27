@@ -711,7 +711,7 @@ class IdealGas:
             ("Entropy [J/kg-K]", self._safe(self.entropy, ".3e") if self._pressure is not None else "N/A"),
             ("Cp [J/kg-K]", self._safe(self.specific_heat_cp, ".3f")),
             ("Cv [J/kg-K]", self._safe(self.specific_heat_cv, ".3f")),
-            ("Gamma", self._safe(self.specific_heat_ratio, ".5f")),
+            ("Specific heat ratio", self._safe(self.specific_heat_ratio, ".5f")),
             ("Gas constant [J/kg-K]", self._safe(self.gas_constant, ".3f")),
             ("Molar mass [kg/mol]", self._safe(self.molar_mass, ".6f")),
             ("Speed of sound [m/s]", self._safe(self.speed_of_sound, ".3f")),

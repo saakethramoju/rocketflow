@@ -957,6 +957,7 @@ class Fluid:
             ("Conductivity [W/m-K]", self._safe(self.conductivity, ".3f")),
             ("Saturation temperature [K]", self._safe(self.saturation_temperature, ".2f")),
             ("Molar mass [kg/mol]", self._safe(self.molar_mass, ".6f")),
+            ("Speed of sound [m/s]", self._safe(self.speed_of_sound, ".6f"))
         ]
         width = max(len(r[0]) for r in rows)
         return "\n".join(f"{key:<{width}} : {val}" for key, val in rows)
