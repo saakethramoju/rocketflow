@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.optimize import least_squares, Bounds, root
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
@@ -282,6 +281,7 @@ class SteadyState:
         self.console.print(table)
         self.console.print()
 
+
     def _verbose_print(
         self,
         sol,
@@ -353,31 +353,57 @@ class SteadyState:
             header_style="bold",
         )
 
-        variables.add_column("Index", justify="right")
-        variables.add_column("Variable")
-        variables.add_column("Value", justify="right")
+        variables.add_column("Index", justify="right", style="dim")
+        variables.add_column("Variable", style="#fdf0d5")
+        variables.add_column("Value", justify="right", style="#D84135")
 
-        iter_vars = self.network.iteration_variables
+        def find_variable_labels(target):
 
-        if len(iter_vars) == len(sol.x):
+            labels = []
 
-            for i, (var, val) in enumerate(
-                zip(iter_vars, sol.x)
-            ):
-                variables.add_row(
-                    f"x[{i}]",
-                    str(var),
-                    f"{val:.6e}",
-                )
+            for component in self.network.component_list:
 
-        else:
+                for attr_name, attr_value in component.__dict__.items():
 
-            for i, val in enumerate(sol.x):
-                variables.add_row(
-                    f"x[{i}]",
-                    "",
-                    f"{val:.6e}",
-                )
+                    if attr_value is target:
+
+                        labels.append(
+                            f"{component.name}.{attr_name}"
+                        )
+
+            for balance in self.network.balance_list:
+
+                for attr_name, attr_value in balance.__dict__.items():
+
+                    if attr_value is target:
+
+                        labels.append(
+                            f"{balance.name}.{attr_name}"
+                        )
+
+            if labels:
+                return labels
+
+            return [str(target)]
+
+        variable_labels = [
+            find_variable_labels(var)
+            for var in self.network.collect_all_iteration_variables()
+        ]
+
+        for i, val in enumerate(sol.x):
+
+            label = (
+                "\n".join(variable_labels[i])
+                if i < len(variable_labels)
+                else "<unlabeled>"
+            )
+
+            variables.add_row(
+                f"x[{i}]",
+                label,
+                f"{val:.6e}",
+            )
 
         residuals = Table(
             title="Residuals",
@@ -386,12 +412,43 @@ class SteadyState:
             header_style="bold",
         )
 
-        residuals.add_column("Index", justify="right")
-        residuals.add_column("Value", justify="right")
+        residuals.add_column("Index", justify="right", style="dim")
+        residuals.add_column("Residual", style="#fdf0d5")
+        residuals.add_column("Value", justify="right", style="#3B629E")
+
+        residual_labels = []
+
+        for component in self.network.component_list:
+
+            component_residuals = component.residuals
+
+            if isinstance(component_residuals, (list, tuple)):
+                for i in range(len(component_residuals)):
+                    residual_labels.append(f"{component.name}.residual[{i}]")
+            else:
+                residual_labels.append(f"{component.name}.residual")
+
+        for balance in self.network.balance_list:
+
+            balance_residuals = balance.residuals
+
+            if isinstance(balance_residuals, (list, tuple)):
+                for i in range(len(balance_residuals)):
+                    residual_labels.append(f"{balance.name}.residual[{i}]")
+            else:
+                residual_labels.append(f"{balance.name}.residual")
 
         for i, r in enumerate(sol.fun):
+
+            label = (
+                residual_labels[i]
+                if i < len(residual_labels)
+                else "<unlabeled>"
+            )
+
             residuals.add_row(
                 f"r[{i}]",
+                label,
                 f"{r:.6e}",
             )
 
@@ -400,7 +457,6 @@ class SteadyState:
         self.console.print(variables)
         self.console.print(residuals)
         self.console.print()
-
 
 
 '''

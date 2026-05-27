@@ -75,3 +75,5 @@ Utilities/__pycache__/FluidRegistry.cpython-313.pyc
 System/Components/Nodes/__pycache__/CombustionChambers.cpython-313.pyc
 Utilities/__pycache__/FluidRegistry.cpython-313.pyc
 Utilities/__pycache__/FluidRegistry.cpython-313.pyc
+jacobian_sparsity.png
+__pycache__/PolytropicPumpTest.cpython-313.pyc

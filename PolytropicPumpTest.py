@@ -763,6 +763,3 @@ print("\n[Pressure Drops]")
 print(f"  Fuel Shaft Speed                : {fuel_shaft_speed:10.3f} rpm")
 print(f"  Ox Shaft Speed                  : {ox_shaft_speed:10.3f} rpm")
 print("="*50)
-
-
-print(chamber_pressure/FuelManifold.pressure)
