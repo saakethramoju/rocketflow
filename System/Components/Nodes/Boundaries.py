@@ -25,14 +25,3 @@ class PressureBoundary(Component):
                  network: Network,
                  pressure: State):
         self.setup()
-    
-
-class IsothermalPressureBoundary(Component):
-
-    def __init__(self, 
-                 name: str,
-                 network: Network,
-                 pressure: State,
-                 temperature: State):
-        
-        self.setup()

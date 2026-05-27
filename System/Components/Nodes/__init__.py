@@ -1,4 +1,4 @@
 from .Boundaries import *
 from .Volumes import *
-from .CombustionChamber import *
+from .CombustionChambers import *
 from .Tanks import *
