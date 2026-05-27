@@ -712,7 +712,9 @@ solution = SteadyState(PumpNetwork).solve(
     verbose=True,
     static=False,
     print_solution=True,
-    jacobian_method='3-point'
+    jacobian_method='3-point',
+    auto_sparsity=False,
+    sparsity_residual_tolerance=1e-8,
 )
 
 

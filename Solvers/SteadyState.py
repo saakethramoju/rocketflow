@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
+from Solvers.SparsityDetector import SparsityDetector
 
 if TYPE_CHECKING:
     from System import Network
@@ -75,6 +76,12 @@ class SteadyState:
         xtol: float = 1e-8,
         gtol: float = 1e-8,
         rtol: float = 1e-2,
+        auto_sparsity: bool = True,
+        sparsity_relative_step: float = 1e-5,
+        sparsity_absolute_step: float = 1e-7,
+        sparsity_residual_tolerance: float = 1e-12,
+        plot_sparsity: bool = False,
+        sparsity_plot_filename: str = "jacobian_sparsity.png",
     ):
 
         if static:
@@ -154,13 +161,36 @@ class SteadyState:
             self.network.keep_feasible,
         )
 
+        jac_sparsity = None
+
+        if auto_sparsity:
+            if method == "lm":
+                raise ValueError("auto_sparsity cannot be used with solver_method='lm'.")
+
+            detector = SparsityDetector(self.network)
+
+            jac_sparsity = detector.detect(
+                relative_step=sparsity_relative_step,
+                absolute_step=sparsity_absolute_step,
+                residual_tolerance=sparsity_residual_tolerance,
+            )
+
+            if plot_sparsity:
+                detector.plot(
+                    jac_sparsity,
+                    filename=sparsity_plot_filename,
+                )
+
         sol = least_squares(
             fun=self.residual,
             x0=x0,
             method=method,
             bounds=bounds,
-            x_scale='jac',
+            x_scale="jac",
             jac=jac,
+            jac_sparsity=jac_sparsity,
+            #tr_solver="lsmr" if jac_sparsity is not None else None,
+            #tr_options={"regularize": True} if jac_sparsity is not None else None,
             ftol=ftol,
             xtol=xtol,
             gtol=gtol,

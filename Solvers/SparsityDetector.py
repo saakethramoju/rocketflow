@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from PolytropicPumpTest import PumpNetwork
-
 
 class SparsityDetector:
     """
@@ -267,31 +265,3 @@ class SparsityDetector:
         )
 
         plt.close()
-
-detector = SparsityDetector(PumpNetwork)
-
-jac_sparsity = detector.detect(
-    relative_step=1e-6,
-    absolute_step=1e-8,
-    residual_tolerance=1e-10,
-)
-
-detector.plot(jac_sparsity, filename="10.png") 
-
-
-jac_sparsity = detector.detect(
-    relative_step=1e-6,
-    absolute_step=1e-8,
-    residual_tolerance=1e-8,
-)
-
-detector.plot(jac_sparsity, filename="8.png") 
-
-
-jac_sparsity = detector.detect(
-    relative_step=1e-6,
-    absolute_step=1e-8,
-    residual_tolerance=1e-12,
-)
-
-detector.plot(jac_sparsity, filename="12.png") 
