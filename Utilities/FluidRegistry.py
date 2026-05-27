@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
+import numpy as np
 
 
 @dataclass(frozen=True)
@@ -366,3 +367,58 @@ class FluidRegistry:
             print(name)
 
         return cls.names
+        
+
+    @classmethod
+    def coolprop_mixture_dict(cls, mixture: dict) -> dict[str, float]:
+        return {
+            cls.coolprop_name(name): float(fraction)
+            for name, fraction in mixture.items()
+        }
+
+
+    @classmethod
+    def pyromat_mixture_dict(
+        cls,
+        mixture: dict,
+        include_prefix: bool = False,
+    ) -> dict[str, float]:
+        return {
+            cls.pyromat_name(name, include_prefix=include_prefix): float(fraction)
+            for name, fraction in mixture.items()
+        }
+
+
+    @classmethod
+    def validate_coolprop_mixture(cls, mixture: dict) -> dict[str, float]:
+        normalized = cls.coolprop_mixture_dict(mixture)
+
+        total = sum(normalized.values())
+
+        if not np.isclose(total, 1.0, atol=1e-6):
+            raise ValueError(
+                f"CoolProp mixture fractions must sum to 1.0. Got {total}."
+            )
+
+        return normalized
+
+
+    @classmethod
+    def validate_pyromat_mixture(
+        cls,
+        mixture: dict,
+        include_prefix: bool = False,
+    ) -> dict[str, float]:
+        normalized = cls.pyromat_mixture_dict(
+            mixture,
+            include_prefix=include_prefix,
+        )
+
+        total = sum(normalized.values())
+
+        if not np.isclose(total, 1.0, atol=1e-6):
+            raise ValueError(
+                f"PYroMat mixture fractions must sum to 1.0. Got {total}."
+            )
+
+        return normalized
