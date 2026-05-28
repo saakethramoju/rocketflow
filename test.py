@@ -25,23 +25,6 @@ SplitterFluid = IdealGasLookup(
     flash_values=("pressure", "enthalpy")
 )
 
-GN2Drain = IdealGasLookup(
-    "GN2 Drain",
-    MixtureNetwork,
-    'gn2',
-    pressure=101325,
-    temperature=300,
-)
-
-GOXDrain = IdealGasLookup(
-    "GOX Drain",
-    MixtureNetwork,
-    'gox',
-    pressure=101325,
-    temperature=300,
-)
-
-
 D = 6 * IN_TO_M
 A = (np.pi/4) * D**2
 
@@ -66,8 +49,6 @@ Splitter = FlowSplitter(
     mass_flow_in=Line1.mass_flow,
     composition=SplitterFluid.composition,
     composition_in=SourceFluid.composition,
-    composition_out1=GN2Drain.composition,
-    composition_out2=GOXDrain.composition
 )
 
 
@@ -76,7 +57,7 @@ Line21 = DischargeCoefficient(
     MixtureNetwork,
     upstream_pressure=SplitterFluid.pressure,
     downstream_pressure=101325,
-    density=GN2Drain.density,
+    density=SplitterFluid.density,
     discharge_coefficient=1,
     cross_sectional_area=A,
     mass_flow=Splitter.mass_flow_out1
@@ -87,7 +68,7 @@ Line22 = DischargeCoefficient(
     MixtureNetwork,
     upstream_pressure=SplitterFluid.pressure,
     downstream_pressure=101325,
-    density=GOXDrain.density,
+    density=SplitterFluid.density,
     discharge_coefficient=1,
     cross_sectional_area=A,
     mass_flow=Splitter.mass_flow_out2

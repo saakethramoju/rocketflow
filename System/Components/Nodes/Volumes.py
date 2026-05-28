@@ -100,19 +100,13 @@ class Volume(Component):
 
 
 
+
 class FlowSplitter(Component):
     """
     Assume the flow entering and leaving carries total enthalpy.
-
-    composition is the internal node composition.
-    composition_in is the inlet stream composition.
-    composition_out1 and composition_out2 are outlet stream compositions.
-
-    If an outlet composition is not provided, it defaults to the node
-    composition. Species conservation is only solved when at least one outlet
-    composition defaults to the node composition.
+    Optional heat_rate is added directly to the splitter control volume.
+    Positive heat_rate adds energy to the fluid.
     """
-
     def __init__(
         self,
         name: str,
@@ -146,38 +140,29 @@ class FlowSplitter(Component):
         if not self.composition_in.is_assigned:
             self.composition_in = self.composition
 
-        out1_uses_node_composition = not self.composition_out1.is_assigned
-        out2_uses_node_composition = not self.composition_out2.is_assigned
-
-        if out1_uses_node_composition:
+        if not self.composition_out1.is_assigned:
             self.composition_out1 = self.composition
 
-        if out2_uses_node_composition:
+        if not self.composition_out2.is_assigned:
             self.composition_out2 = self.composition
 
-        self._solve_species = (
-            out1_uses_node_composition
-            or out2_uses_node_composition
-        )
-
-        if self._solve_species:
-            self.composition.constrain_species()
+        self.composition.constrain_species()
 
     @property
     def iteration_variables(self) -> list[State]:
-        variables = [
+        return [
             self.pressure,
             self.enthalpy,
+            *self.composition.states[:-1],
         ]
 
-        if self._solve_species:
-            variables.extend(self.composition.states[:-1])
 
-        return variables
 
     @property
     def residuals(self) -> list[float]:
         qdot = self.heat_rate.value if self.heat_rate.is_assigned else 0.0
+
+        self.composition.enforce_constraint()
 
         energy_in = self.mass_flow_in.value * self.total_enthalpy_in.value
 
@@ -186,29 +171,28 @@ class FlowSplitter(Component):
             + self.mass_flow_out2.value * self.total_enthalpy_out2.value
         )
 
-        residuals = [
+        species_residuals = []
+
+        for species in self.composition.species[:-1]:
+            species_in = (
+                self.mass_flow_in.value
+                * self.composition_in[species].value
+            )
+
+            species_out = (
+                self.mass_flow_out1.value
+                * self.composition_out1[species].value
+                + self.mass_flow_out2.value
+                * self.composition_out2[species].value
+            )
+
+            species_residuals.append(species_in - species_out)
+
+        return [
             self.mass_flow_in.value
             - (self.mass_flow_out1.value + self.mass_flow_out2.value),
 
             energy_in + qdot - energy_out,
+
+            *species_residuals,
         ]
-
-        if self._solve_species:
-            self.composition.enforce_constraint()
-
-            for species in self.composition.species[:-1]:
-                species_in = (
-                    self.mass_flow_in.value
-                    * self.composition_in[species].value
-                )
-
-                species_out = (
-                    self.mass_flow_out1.value
-                    * self.composition_out1[species].value
-                    + self.mass_flow_out2.value
-                    * self.composition_out2[species].value
-                )
-
-                residuals.append(species_in - species_out)
-
-        return residuals
