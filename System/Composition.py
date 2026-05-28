@@ -1,7 +1,7 @@
 import numpy as np
 
 from Utilities import FluidRegistry
-from System import State
+from .State import State
 
 
 class Composition:

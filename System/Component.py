@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
 import inspect
 
-from System.State import State
+from .State import State
 
 if TYPE_CHECKING:
     from System import Network

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from System import Component, State
+from ...Composition import Composition
 from Utilities import Fluid, FluidRegistry
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ class FluidLookup(Component):
         self,
         name: str,
         network: Network,
-        fluid: str,
+        fluid: str | dict[str, State | float] | Composition,
         pressure: State | float | None = None,
         temperature: State | float | None = None,
         enthalpy: State | float | None = None,
@@ -84,7 +85,9 @@ class FluidLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-        self._coolprop_fluid = FluidRegistry.coolprop_name(self.fluid)
+        self.composition = self._initialize_composition(self.fluid)
+        self._coolprop_fluid = self._fluid_argument_from_composition()
+        self._last_composition_values: tuple[float, ...] | None = None
 
         provided_names = [
             prop_name
@@ -143,6 +146,7 @@ class FluidLookup(Component):
 
         self._Fluid = Fluid(
             self._coolprop_fluid,
+            basis="mass",
             **{
                 name: getattr(self, name).value
                 for name in initial_ordered_names
@@ -209,6 +213,7 @@ class FluidLookup(Component):
         self.evaluate_states()
 
     def evaluate_states(self) -> None:
+        self._set_fluid_from_composition()
         self._set_fluid_from_flash()
 
         for prop_name in self._external_property_names:
@@ -286,6 +291,76 @@ class FluidLookup(Component):
             getattr(Fluid, name, None),
             property,
         )
+        
+    def _initialize_composition(
+        self,
+        fluid: str | dict[str, State | float] | Composition,
+    ) -> Composition:
+
+        if isinstance(fluid, Composition):
+            return fluid
+
+        return Composition(fluid)
+
+
+    def _fluid_argument_from_composition(self) -> str | dict[str, float]:
+
+        values = self.composition.values
+
+        if len(values) == 1:
+            species = next(iter(values))
+            return FluidRegistry.coolprop_name(species)
+
+        return FluidRegistry.coolprop_mixture_dict(values)
+
+
+    def _composition_values(self) -> tuple[float, ...]:
+        return tuple(
+            self.composition[species].value
+            for species in self.composition.species
+        )
+
+
+    def _set_fluid_from_composition(self) -> None:
+
+        composition_values = self._composition_values()
+
+        if self._composition_values_unchanged(composition_values):
+            return
+
+        total = sum(composition_values)
+
+        if not np.isclose(total, 1.0, rtol=0.0, atol=1e-6):
+            raise ValueError(
+                f"{self.name}: composition mass fractions must sum to 1.0. "
+                f"Got {total}."
+            )
+
+        if len(composition_values) > 1:
+            self._Fluid.mass_fractions = list(composition_values)
+
+        self._last_composition_values = composition_values
+        self._last_flash_values = None
+        self._property_cache.clear()
+
+
+    def _composition_values_unchanged(
+        self,
+        composition_values: tuple[float, ...],
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
+    ) -> bool:
+
+        if self._last_composition_values is None:
+            return False
+
+        return all(
+            np.isclose(current, previous, rtol=rtol, atol=atol)
+            for current, previous in zip(
+                composition_values,
+                self._last_composition_values,
+            )
+        )
 
     @property
     def ignored_export_attributes(self) -> set[str]:
@@ -306,4 +381,7 @@ class FluidLookup(Component):
             "_last_flash_values",
             "property_cache",
             "_property_cache",
+            "composition",
+            "last_composition_values",
+            "_last_composition_values",
         }
