@@ -196,6 +196,7 @@ class Fluid:
 
         self._P = None
         self._h = None
+        self._last_state_values: dict | None = None
         self._fluid_string = "&".join(self._fluids)
         self._backend = self._build_state()
         self._pyfluid = self._backend
@@ -244,6 +245,7 @@ class Fluid:
         self._pyfluid = self._backend
 
     def _set_state_from_named_pair(self, values: dict) -> None:
+        self._last_state_values = dict(values)
         keys = frozenset(values.keys())
 
         if keys not in Fluid._FLASH_PAIRS:
@@ -377,14 +379,18 @@ class Fluid:
         """Update mole fractions. Fractions must sum to 1."""
         if len(self._fluids) == 1:
             raise ValueError("Cannot change mole fractions for a pure fluid")
+
         if not np.isclose(sum(value), 1.0, atol=1e-6):
             raise ValueError("Mole fractions must sum to 1.0")
+
         self._mole_fractions = np.array(value, dtype=float)
         self._mass_fractions = Fluid.mole_to_mass(self._fluids, value)
+
         self._backend = self._build_state()
         self._pyfluid = self._backend
-        if self._P is not None and self._h is not None:
-            self.set_pyfluid()
+
+        if self._last_state_values is not None:
+            self._set_state_from_named_pair(self._last_state_values)
 
     @property
     def mass_fractions(self) -> dict:
@@ -396,14 +402,18 @@ class Fluid:
         """Update mass fractions. Fractions must sum to 1."""
         if len(self._fluids) == 1:
             raise ValueError("Cannot change mass fractions for a pure fluid")
+
         if not np.isclose(sum(value), 1.0, atol=1e-6):
             raise ValueError("Mass fractions must sum to 1.0")
+
         self._mass_fractions = np.array(value, dtype=float)
         self._mole_fractions = Fluid.mass_to_mole(self._fluids, value)
+
         self._backend = self._build_state()
         self._pyfluid = self._backend
-        if self._P is not None and self._h is not None:
-            self.set_pyfluid()
+
+        if self._last_state_values is not None:
+            self._set_state_from_named_pair(self._last_state_values)
 
     # ---------------- State setters ---------------- #
     @property

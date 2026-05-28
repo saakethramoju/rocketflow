@@ -100,13 +100,19 @@ class Volume(Component):
 
 
 
-
 class FlowSplitter(Component):
     """
     Assume the flow entering and leaving carries total enthalpy.
-    Optional heat_rate is added directly to the splitter control volume.
-    Positive heat_rate adds energy to the fluid.
+
+    composition is the internal node composition.
+    composition_in is the inlet stream composition.
+    composition_out1 and composition_out2 are outlet stream compositions.
+
+    If an outlet composition is not provided, it defaults to the node
+    composition. Species conservation is only solved when at least one outlet
+    composition defaults to the node composition.
     """
+
     def __init__(
         self,
         name: str,
@@ -140,22 +146,34 @@ class FlowSplitter(Component):
         if not self.composition_in.is_assigned:
             self.composition_in = self.composition
 
-        if not self.composition_out1.is_assigned:
+        out1_uses_node_composition = not self.composition_out1.is_assigned
+        out2_uses_node_composition = not self.composition_out2.is_assigned
+
+        if out1_uses_node_composition:
             self.composition_out1 = self.composition
 
-        if not self.composition_out2.is_assigned:
+        if out2_uses_node_composition:
             self.composition_out2 = self.composition
 
-        self.composition.constrain_species()
+        self._solve_species = (
+            out1_uses_node_composition
+            or out2_uses_node_composition
+        )
+
+        if self._solve_species:
+            self.composition.constrain_species()
 
     @property
     def iteration_variables(self) -> list[State]:
-        return [
+        variables = [
             self.pressure,
             self.enthalpy,
-            *self.composition.states[:-1],
         ]
 
+        if self._solve_species:
+            variables.extend(self.composition.states[:-1])
+
+        return variables
 
     @property
     def residuals(self) -> list[float]:
@@ -168,29 +186,29 @@ class FlowSplitter(Component):
             + self.mass_flow_out2.value * self.total_enthalpy_out2.value
         )
 
-        self.composition.constrain_species()
-
-        for species in self.composition.species[:-1]:
-            species_in = (
-                self.mass_flow_in.value
-                * self.composition_in[species].value
-            )
-
-            species_out = (
-                self.mass_flow_out1.value
-                * self.composition_out1[species].value
-                + self.mass_flow_out2.value
-                * self.composition_out2[species].value
-            )
-
         residuals = [
             self.mass_flow_in.value
             - (self.mass_flow_out1.value + self.mass_flow_out2.value),
 
             energy_in + qdot - energy_out,
-
-            species_in - species_out
         ]
 
+        if self._solve_species:
+            self.composition.enforce_constraint()
+
+            for species in self.composition.species[:-1]:
+                species_in = (
+                    self.mass_flow_in.value
+                    * self.composition_in[species].value
+                )
+
+                species_out = (
+                    self.mass_flow_out1.value
+                    * self.composition_out1[species].value
+                    + self.mass_flow_out2.value
+                    * self.composition_out2[species].value
+                )
+
+                residuals.append(species_in - species_out)
 
         return residuals

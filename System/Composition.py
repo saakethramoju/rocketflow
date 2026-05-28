@@ -16,6 +16,7 @@ class Composition:
         # Initialize empty placeholder composition.
         self.fraction: dict[str, State] = {}
         self._constrained_species: str | None = None
+        self._zero_fraction_states: dict[str, State] = {}
 
         # Empty composition behaves like an unassigned placeholder.
         if fluid is None:
@@ -105,8 +106,16 @@ class Composition:
 
 
     def __getitem__(self, species: str) -> State:
-        # Allow composition["O2"] style access.
-        return self.fraction[FluidRegistry.name(species)]
+        # Return the species fraction State, or a fixed zero State if absent.
+        species = FluidRegistry.name(species)
+
+        if species in self.fraction:
+            return self.fraction[species]
+
+        if species not in self._zero_fraction_states:
+            self._zero_fraction_states[species] = State(0.0)
+
+        return self._zero_fraction_states[species]
 
     def __iter__(self):
         # Iterate over (species, State) pairs.

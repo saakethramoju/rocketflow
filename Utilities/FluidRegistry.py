@@ -183,6 +183,7 @@ ALIASES: dict[str, str] = {
     "o2": "Oxygen",
     "go2": "Oxygen",
     "lox": "Oxygen",
+    "gox": "Oxygen",
     "oxygen": "Oxygen",
 
     "h2o": "Water",

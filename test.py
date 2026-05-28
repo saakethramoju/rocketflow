@@ -15,7 +15,7 @@ SourceFluid = FluidLookup(
     temperature=300,
 )
 
-SplitterFluid = FluidLookup(
+SplitterFluid = IdealGasLookup(
     "Splitter Fluid",
     MixtureNetwork,
     {"gn2": 0.75, "O2": 0.25},
@@ -23,6 +23,22 @@ SplitterFluid = FluidLookup(
     pressure=2e5,
     temperature=300,
     flash_values=("pressure", "enthalpy")
+)
+
+GN2Drain = IdealGasLookup(
+    "GN2 Drain",
+    MixtureNetwork,
+    'gn2',
+    pressure=101325,
+    temperature=300,
+)
+
+GOXDrain = IdealGasLookup(
+    "GOX Drain",
+    MixtureNetwork,
+    'gox',
+    pressure=101325,
+    temperature=300,
 )
 
 
@@ -49,6 +65,9 @@ Splitter = FlowSplitter(
     total_enthalpy_in=SourceFluid.enthalpy,
     mass_flow_in=Line1.mass_flow,
     composition=SplitterFluid.composition,
+    composition_in=SourceFluid.composition,
+    composition_out1=GN2Drain.composition,
+    composition_out2=GOXDrain.composition
 )
 
 
@@ -57,7 +76,7 @@ Line21 = DischargeCoefficient(
     MixtureNetwork,
     upstream_pressure=SplitterFluid.pressure,
     downstream_pressure=101325,
-    density=SplitterFluid.density,
+    density=GN2Drain.density,
     discharge_coefficient=1,
     cross_sectional_area=A,
     mass_flow=Splitter.mass_flow_out1
@@ -68,7 +87,7 @@ Line22 = DischargeCoefficient(
     MixtureNetwork,
     upstream_pressure=SplitterFluid.pressure,
     downstream_pressure=101325,
-    density=SplitterFluid.density,
+    density=GOXDrain.density,
     discharge_coefficient=1,
     cross_sectional_area=A,
     mass_flow=Splitter.mass_flow_out2
@@ -79,4 +98,5 @@ solution = SteadyState(MixtureNetwork).solve(
     verbose=True,
     static=False,
     print_solution=True,
+    filename='test.xlsx'
 )

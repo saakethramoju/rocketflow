@@ -136,6 +136,7 @@ class IdealGas:
         self._pressure: float | None = None
         self._enthalpy: float | None = None
         self._temperature: float | None = None
+        self._last_state_values: dict | None = None
 
         self._set_state(
             pressure=pressure,
@@ -166,6 +167,18 @@ class IdealGas:
         internal_energy: float | None = None,
         density: float | None = None,
     ) -> None:
+        self._last_state_values = {
+            "pressure": pressure,
+            "temperature": temperature,
+            "enthalpy": enthalpy,
+            "internal_energy": internal_energy,
+            "density": density,
+        }
+        self._last_state_values = {
+            key: value
+            for key, value in self._last_state_values.items()
+            if value is not None
+        }
 
         thermal_inputs = [
             temperature is not None,
@@ -339,8 +352,8 @@ class IdealGas:
         self._mole_fractions = np.array(value, dtype=float)
         self._mass_fractions = self.mole_to_mass(self._species_ids, value)
 
-        if self._enthalpy is not None:
-            self._temperature = self._temperature_from_enthalpy(self._enthalpy)
+        if self._last_state_values is not None:
+            self._set_state(**self._last_state_values)
 
     @property
     def mass_fractions(self) -> dict:
@@ -360,8 +373,8 @@ class IdealGas:
         self._mass_fractions = np.array(value, dtype=float)
         self._mole_fractions = self.mass_to_mole(self._species_ids, value)
 
-        if self._enthalpy is not None:
-            self._temperature = self._temperature_from_enthalpy(self._enthalpy)
+        if self._last_state_values is not None:
+            self._set_state(**self._last_state_values)
 
     # ---------------- State setters ---------------- #
 
