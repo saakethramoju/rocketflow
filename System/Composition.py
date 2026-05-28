@@ -53,6 +53,32 @@ class Composition:
             for species, state in self.fraction.items()
         }
 
+
+    def constrain_species(
+        self,
+        species: str | None = None,
+    ) -> None:
+        # Adjust one regular State so all mass fractions sum to 1.0.
+        if species is None:
+            species = next(reversed(self.fraction))
+
+        species = FluidRegistry.name(species)
+
+        if species not in self.fraction:
+            raise ValueError(
+                f"{species!r} is not present in the composition."
+            )
+
+        value = 1.0 - sum(
+            state.value
+            for other_species, state in self.fraction.items()
+            if other_species != species
+        )
+
+        self.fraction[species].value = value
+
+        
+
     def __getitem__(self, species: str) -> State:
         # Allow composition["O2"] style access.
         return self.fraction[FluidRegistry.name(species)]

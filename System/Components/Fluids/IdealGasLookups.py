@@ -115,6 +115,7 @@ class IdealGasLookup(Component):
 
         self._reference_IdealGas = IdealGas(
             self._pyromat_fluid,
+            basis="mass",
             pressure=self._REFERENCE_PRESSURE,
             temperature=self._REFERENCE_TEMPERATURE,
         )
@@ -521,7 +522,6 @@ class IdealGasLookup(Component):
             )
         )
 
-
     def _set_ideal_gas_from_composition(self) -> None:
 
         composition_values = self._composition_values()
@@ -541,9 +541,20 @@ class IdealGasLookup(Component):
             self._IdealGas.mass_fractions = list(composition_values)
             self._reference_IdealGas.mass_fractions = list(composition_values)
 
+            reference_fluid = Fluid(
+                self._coolprop_fluid,
+                basis="mass",
+                pressure=self._REFERENCE_PRESSURE,
+                temperature=self._REFERENCE_TEMPERATURE,
+            )
+
+            self._reference_enthalpy = reference_fluid.enthalpy
+            self._reference_internal_energy = reference_fluid.internal_energy
+
         self._last_composition_values = composition_values
         self._last_flash_values = None
         self._property_cache.clear()
+
 
     @property
     def ignored_export_attributes(self) -> set[str]:
