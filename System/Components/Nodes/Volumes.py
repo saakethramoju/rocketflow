@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from System import Component, State
 
 if TYPE_CHECKING:
-    from System import Network
+    from System import Network, Composition
 
 
 
@@ -101,7 +101,7 @@ class Volume(Component):
 
 
 
-class SimpleFlowSplitter(Component):
+class FlowSplitter(Component):
     """
     Assume the flow entering and leaving carries total enthalpy.
     Optional heat_rate is added directly to the splitter control volume.
@@ -114,9 +114,13 @@ class SimpleFlowSplitter(Component):
         pressure: State,
         enthalpy: State,
         volume: float,
+        composition: Composition,
         total_enthalpy_in: State,
         total_enthalpy_out1: State | None = None,
         total_enthalpy_out2: State | None = None,
+        composition_in: Composition | None = None,
+        composition_out1: Composition | None = None,
+        composition_out2: Composition | None = None,
         heat_rate: State | float | None = None,
         temperature: State | None = None,
         density: State | None = None,
@@ -133,9 +137,25 @@ class SimpleFlowSplitter(Component):
         if not self.total_enthalpy_out2.is_assigned:
             self.total_enthalpy_out2 = self.enthalpy
 
+        if not self.composition_in.is_assigned:
+            self.composition_in = self.composition
+
+        if not self.composition_out1.is_assigned:
+            self.composition_out1 = self.composition
+
+        if not self.composition_out2.is_assigned:
+            self.composition_out2 = self.composition
+
+        self.composition.constrain_species()
+
     @property
     def iteration_variables(self) -> list[State]:
-        return [self.pressure, self.enthalpy]
+        return [
+            self.pressure,
+            self.enthalpy,
+            *self.composition.states[:-1],
+        ]
+
 
     @property
     def residuals(self) -> list[float]:
@@ -148,9 +168,29 @@ class SimpleFlowSplitter(Component):
             + self.mass_flow_out2.value * self.total_enthalpy_out2.value
         )
 
-        return [
+        self.composition.constrain_species()
+
+        for species in self.composition.species[:-1]:
+            species_in = (
+                self.mass_flow_in.value
+                * self.composition_in[species].value
+            )
+
+            species_out = (
+                self.mass_flow_out1.value
+                * self.composition_out1[species].value
+                + self.mass_flow_out2.value
+                * self.composition_out2[species].value
+            )
+
+        residuals = [
             self.mass_flow_in.value
             - (self.mass_flow_out1.value + self.mass_flow_out2.value),
 
             energy_in + qdot - energy_out,
+
+            species_in - species_out
         ]
+
+
+        return residuals

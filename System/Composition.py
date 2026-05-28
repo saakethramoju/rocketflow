@@ -11,14 +11,22 @@ class Composition:
 
     def __init__(
         self,
-        fluid: dict[str, State | float] | str,
+        fluid: dict[str, State | float] | str | None = None,
     ):
+        # Initialize empty placeholder composition.
+        self.fraction: dict[str, State] = {}
+        self._constrained_species: str | None = None
+
+        # Empty composition behaves like an unassigned placeholder.
+        if fluid is None:
+            return
+
         # Convert a pure species string into a single-species composition.
         if isinstance(fluid, str):
             fluid = {fluid: 1.0}
 
         # Store all species fractions as mutable State objects.
-        self.fraction: dict[str, State] = {
+        self.fraction = {
             FluidRegistry.name(species): (
                 value
                 if isinstance(value, State)
@@ -53,12 +61,19 @@ class Composition:
             for species, state in self.fraction.items()
         }
 
+    @property
+    def is_assigned(self) -> bool:
+        # Return True if the composition contains at least one species.
+        return len(self.fraction) > 0
 
     def constrain_species(
         self,
         species: str | None = None,
     ) -> None:
-        # Adjust one regular State so all mass fractions sum to 1.0.
+        # Select one regular State to adjust so all mass fractions sum to 1.0.
+        if not self.is_assigned:
+            raise ValueError("Cannot constrain an empty Composition.")
+
         if species is None:
             species = next(reversed(self.fraction))
 
@@ -69,6 +84,17 @@ class Composition:
                 f"{species!r} is not present in the composition."
             )
 
+        self._constrained_species = species
+        self.enforce_constraint()
+
+
+    def enforce_constraint(self) -> None:
+        # Re-adjust the constrained species if one has been selected.
+        if self._constrained_species is None:
+            return
+
+        species = self._constrained_species
+
         value = 1.0 - sum(
             state.value
             for other_species, state in self.fraction.items()
@@ -77,7 +103,6 @@ class Composition:
 
         self.fraction[species].value = value
 
-        
 
     def __getitem__(self, species: str) -> State:
         # Allow composition["O2"] style access.
@@ -97,6 +122,9 @@ class Composition:
 
     def __str__(self) -> str:
         # Return a compact user-readable composition string.
+        if not self.is_assigned:
+            return "Composition(<unassigned>)"
+
         return (
             "Composition("
             + ", ".join(

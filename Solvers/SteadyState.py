@@ -365,10 +365,16 @@ class SteadyState:
                 for attr_name, attr_value in component.__dict__.items():
 
                     if attr_value is target:
-
                         labels.append(
                             f"{component.name}.{attr_name}"
                         )
+
+                    if hasattr(attr_value, "fraction"):
+                        for species, state in attr_value:
+                            if state is target:
+                                labels.append(
+                                    f"{component.name}.{attr_name}.{species}"
+                                )
 
             for balance in self.network.balance_list:
 

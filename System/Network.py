@@ -239,6 +239,30 @@ class Network:
                 if attr_name in ignored_attributes or attr_name.startswith("_"):
                     continue
 
+                if hasattr(attr_value, "fraction"):
+                    if attr_value.is_assigned:
+                        for species, state in attr_value:
+                            try:
+                                value = state.value
+                            except Exception:
+                                value = "<unavailable>"
+
+                            records.append({
+                                "component_name": comp.name,
+                                "component_type": comp.__class__.__name__,
+                                "attribute": f"{attr_name}.{species}",
+                                "value": value,
+                            })
+                    else:
+                        records.append({
+                            "component_name": comp.name,
+                            "component_type": comp.__class__.__name__,
+                            "attribute": attr_name,
+                            "value": "<uninitialized>",
+                        })
+
+                    continue
+
                 if hasattr(attr_value, "is_assigned"):
                     if attr_value.is_assigned:
                         try:

@@ -498,6 +498,8 @@ class IdealGasLookup(Component):
 
 
     def _composition_values(self) -> tuple[float, ...]:
+        self.composition.enforce_constraint()
+
         return tuple(
             self.composition[species].value
             for species in self.composition.species
