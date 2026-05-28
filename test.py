@@ -6,7 +6,7 @@ from constants import *
 
 TubeNetwork = Network("Tube Flow")
 
-SourceGas = FluidLookup(
+SourceGas = IdealGasLookup(
     "Source Gas",
     TubeNetwork,
     {"N2": 0.78, "O2": 0.22},

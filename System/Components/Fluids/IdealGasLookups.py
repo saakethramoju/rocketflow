@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from System import Component, State
+from ...Composition import Composition
 from Utilities import Fluid, IdealGas, FluidRegistry
 
 if TYPE_CHECKING:
@@ -68,7 +69,7 @@ class IdealGasLookup(Component):
         self,
         name: str,
         network: Network,
-        fluid: str,
+        fluid: str | dict[str, State | float] | Composition,
         pressure: State | float | None = None,
         temperature: State | float | None = None,
         enthalpy: State | float | None = None,
@@ -94,18 +95,17 @@ class IdealGasLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-        if not FluidRegistry.supports_both(self.fluid):
-            raise ValueError(
-                f"{self.fluid!r} must be supported by both CoolProp and "
-                f"PYroMat because IdealGasLookup uses CoolProp reference "
-                f"enthalpy/internal energy and PYroMat ideal-gas properties."
-            )
+        self.composition = self._initialize_composition(self.fluid)
+        self._last_composition_values: tuple[float, ...] | None = None
 
-        self._coolprop_fluid = FluidRegistry.coolprop_name(self.fluid)
-        self._pyromat_fluid = FluidRegistry.pyromat_name(self.fluid)
+        self._validate_composition_support()
+
+        self._coolprop_fluid = self._coolprop_argument_from_composition()
+        self._pyromat_fluid = self._pyromat_argument_from_composition()
 
         reference_fluid = Fluid(
             self._coolprop_fluid,
+            basis="mass",
             pressure=self._REFERENCE_PRESSURE,
             temperature=self._REFERENCE_TEMPERATURE,
         )
@@ -195,6 +195,7 @@ class IdealGasLookup(Component):
 
         self._IdealGas = IdealGas(
             self._pyromat_fluid,
+            basis="mass",
             **{
                 flash_name: self._to_ideal_basis(
                     flash_name,
@@ -268,6 +269,7 @@ class IdealGasLookup(Component):
         self.evaluate_states()
 
     def evaluate_states(self) -> None:
+        self._set_ideal_gas_from_composition()
         self._set_ideal_gas_from_flash()
 
         for prop_name in self._external_property_names:
@@ -446,6 +448,102 @@ class IdealGasLookup(Component):
             getattr(IdealGas, name, None),
             property,
         )
+        
+    def _initialize_composition(
+        self,
+        fluid: str | dict[str, State | float] | Composition,
+    ) -> Composition:
+
+        if isinstance(fluid, Composition):
+            return fluid
+
+        return Composition(fluid)
+
+
+    def _validate_composition_support(self) -> None:
+
+        for species in self.composition.species:
+            if not FluidRegistry.supports_both(species):
+                raise ValueError(
+                    f"{species!r} must be supported by both CoolProp and PYroMat "
+                    f"because IdealGasLookup uses CoolProp reference enthalpy/internal "
+                    f"energy and PYroMat ideal-gas properties."
+                )
+
+
+    def _coolprop_argument_from_composition(self) -> str | dict[str, float]:
+
+        values = self.composition.values
+
+        if len(values) == 1:
+            species = next(iter(values))
+            return FluidRegistry.coolprop_name(species)
+
+        return FluidRegistry.coolprop_mixture_dict(values)
+
+
+    def _pyromat_argument_from_composition(self) -> str | dict[str, float]:
+
+        values = self.composition.values
+
+        if len(values) == 1:
+            species = next(iter(values))
+            return FluidRegistry.pyromat_name(species, include_prefix=True)
+
+        return FluidRegistry.pyromat_mixture_dict(
+            values,
+            include_prefix=True,
+        )
+
+
+    def _composition_values(self) -> tuple[float, ...]:
+        return tuple(
+            self.composition[species].value
+            for species in self.composition.species
+        )
+
+
+    def _composition_values_unchanged(
+        self,
+        composition_values: tuple[float, ...],
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
+    ) -> bool:
+
+        if self._last_composition_values is None:
+            return False
+
+        return all(
+            np.isclose(current, previous, rtol=rtol, atol=atol)
+            for current, previous in zip(
+                composition_values,
+                self._last_composition_values,
+            )
+        )
+
+
+    def _set_ideal_gas_from_composition(self) -> None:
+
+        composition_values = self._composition_values()
+
+        if self._composition_values_unchanged(composition_values):
+            return
+
+        total = sum(composition_values)
+
+        if not np.isclose(total, 1.0, rtol=0.0, atol=1e-6):
+            raise ValueError(
+                f"{self.name}: composition mass fractions must sum to 1.0. "
+                f"Got {total}."
+            )
+
+        if len(composition_values) > 1:
+            self._IdealGas.mass_fractions = list(composition_values)
+            self._reference_IdealGas.mass_fractions = list(composition_values)
+
+        self._last_composition_values = composition_values
+        self._last_flash_values = None
+        self._property_cache.clear()
 
     @property
     def ignored_export_attributes(self) -> set[str]:
@@ -474,4 +572,7 @@ class IdealGasLookup(Component):
             "_last_flash_values",
             "property_cache",
             "_property_cache",
+            "composition",
+            "last_composition_values",
+            "_last_composition_values",
         }
