@@ -128,6 +128,16 @@ class Composition:
     def __len__(self) -> int:
         # Return the number of species.
         return len(self.fraction)
+        
+    def __or__(
+        # Return all unique species from both compositions.
+        self,
+        other: "Composition",
+    ) -> set[str]:
+        return (
+            set(self.species)
+            | set(other.species)
+        )
 
     def __str__(self) -> str:
         # Return a compact user-readable composition string.
