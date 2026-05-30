@@ -102,6 +102,7 @@ class Composition:
         return self._zero_fraction_states[species]
 
     def __and__(self, other: "Composition | None") -> tuple[str, ...]:
+        # Returns only ITERABLE species intersections
         if other is None or not self.is_assigned or not other.is_assigned:
             return ()
 

@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from System import Component, State
-from ...Composition import Composition
+from System import Component, State, Composition
 from Utilities import Fluid, IdealGas, FluidRegistry
 
 if TYPE_CHECKING:

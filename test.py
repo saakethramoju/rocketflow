@@ -45,20 +45,9 @@ Vol = SimpleVolume(
     mass_flow_in=Inlet.mass_flow,
     composition_in=SourceFluid.composition,
     composition=VolumeFluid.composition,
-    mass_flow_out=Inlet.mass_flow
 )
 
-Separator = FlowSplitter(
-    "Separator",
-    MixtureNetwork,
-    mass_flow_in=Vol.mass_flow_out,
-    mass_flow_out1=1,
-    composition_in=Vol.composition,
-    composition_out1=Composition("N2"),
-    composition_out2=Composition({"N2":0.25, "O2":.75}),
-)
 
-'''
 Outlet = DischargeCoefficient(
     "Outlet",
     MixtureNetwork,
@@ -69,7 +58,7 @@ Outlet = DischargeCoefficient(
     cross_sectional_area=A,
     mass_flow=Vol.mass_flow_out
 )
-'''
+
 solution = SteadyState(MixtureNetwork).solve(
     return_type="dataframe",
     verbose=True,

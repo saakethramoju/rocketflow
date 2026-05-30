@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from System import Component, State
-from ...Composition import Composition
+from System import Component, State, Composition
 
 if TYPE_CHECKING:
     from System import Network
+
 
 
 class SimpleVolume(Component):
@@ -48,8 +48,6 @@ class SimpleVolume(Component):
         ]
 
 
-
-
 class IsothermalVolume(Component):
 
     def __init__(self,
@@ -60,7 +58,6 @@ class IsothermalVolume(Component):
                  volume: float,
                  density: State | None = None,
                  enthalpy: State | None = None,
-                 composition: Composition | None = None,
                  mass_flow_in: State | None = None,
                  mass_flow_out: State | None = None):
         
@@ -90,7 +87,6 @@ class Volume(Component):
         temperature: State | None = None,
         density: State | None = None,
         internal_energy: State | None = None,
-        composition: Composition | None = None,
         mass_flow_in: State | None = None,
         mass_flow_out: State | None = None,
     ):
@@ -115,3 +111,4 @@ class Volume(Component):
                 + qdot
             ),
         ]
+    
