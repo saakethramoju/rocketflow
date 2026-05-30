@@ -130,9 +130,28 @@ class Composition:
         other: "Composition",
     ) -> None:
         # Copy matching species values from another composition.
+        if not self <= other:
+            raise ValueError(
+                "Cannot copy values: destination contains species "
+                "not present in source."
+            )
+
         for species in self.species:
             self[species].value = other[species].value
 
+    def copy_states(
+        self,
+        other: "Composition",
+    ) -> None:
+        # Copy matching species States from another composition.
+        if not self <= other:
+            raise ValueError(
+                "Cannot copy States: destination contains species "
+                "not present in source."
+            )
+
+        for species in self.species:
+            self.fraction[species] = other[species]
 
     def __getitem__(self, species: str) -> State:
         # Return a species State, or a fixed zero State if absent.
@@ -203,30 +222,34 @@ class Composition:
         other: "Composition",
     ) -> bool:
         # Return True if all species in self are present in other.
-        return (self - other) == set()
-    
+        return set(self.species) <= set(other.species)
 
 
     def _new_unchecked(
         self,
-        values: dict[str, float],
+        values: dict[str, State | float],
     ) -> "Composition":
         # Create a Composition result without requiring fractions to sum to 1.
         result = Composition()
+
         result.fraction = {
-            FluidRegistry.name(species): State(float(value))
+            FluidRegistry.name(species): (
+                value if isinstance(value, State)
+                else State(float(value))
+            )
             for species, value in values.items()
         }
+
         return result
 
 
     def __mul__(
         self,
-        scalar: float | int,
+        scalar,
     ) -> "Composition":
-        # Scale every species fraction by a scalar.
+        # Scale every species fraction by a scalar or State.
         return self._new_unchecked({
-            species: state.value * float(scalar)
+            species: state * scalar
             for species, state in self.fraction.items()
         })
 
@@ -241,19 +264,13 @@ class Composition:
 
     def __truediv__(
         self,
-        scalar: float | int,
+        scalar,
     ) -> "Composition":
-        # Divide every species fraction by a scalar.
-        scalar = float(scalar)
-
-        if scalar == 0.0:
-            raise ZeroDivisionError("Cannot divide Composition by zero.")
-
+        # Divide every species fraction by a scalar or State.
         return self._new_unchecked({
-            species: state.value / scalar
+            species: state / scalar
             for species, state in self.fraction.items()
         })
-
 
     def __add__(
         self,
@@ -261,7 +278,7 @@ class Composition:
     ) -> "Composition":
         # Add like species and keep species that appear in either composition.
         return self._new_unchecked({
-            species: self[species].value + other[species].value
+            species: self[species] + other[species]
             for species in self | other
         })
 
@@ -270,20 +287,12 @@ class Composition:
         self,
         other: "Composition",
     ) -> "Composition":
-        # Subtract like species; other cannot contain species missing from self.
-        missing = set(other.species) - set(self.species)
-
-        if missing:
-            raise ValueError(
-                "Cannot subtract Composition with species not present in self: "
-                f"{sorted(missing)}"
-            )
-
+        # Subtract like species. Species present only in self are retained.
+        # Species present only in other are ignored.
         return self._new_unchecked({
-            species: self[species].value - other[species].value
+            species: self[species] - other[species]
             for species in self.species
         })
-
 
     def __str__(self) -> str:
         # Return a compact user-readable composition string.

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import inspect
 
 from .State import State
+from .Composition import Composition
 
 if TYPE_CHECKING:
     from System import Network
@@ -59,11 +60,12 @@ class Component(ABC):
                 self.initialize_attribute(value),
             )
 
-    def initialize_attribute(self, value: State | float | int | str | bool | None = None):
+    def initialize_attribute(self, value: State | Composition | float | int | str | bool | None = None):
         """
         Normalize input into a State object.
 
         - State -> returned directly
+        - Composition -> returned directly
         - float/int -> wrapped in State
         - bool -> returned directly
         - str -> returned directly
@@ -72,6 +74,9 @@ class Component(ABC):
         """
 
         if isinstance(value, State):
+            return value
+        
+        if isinstance(value, Composition):
             return value
 
         if value is None:

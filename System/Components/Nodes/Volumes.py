@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from System import Component, State
+from ...Composition import Composition
 
 if TYPE_CHECKING:
-    from System import Network, Composition
+    from System import Network
 
 
 class SimpleVolume(Component):
@@ -19,15 +20,13 @@ class SimpleVolume(Component):
         density: State | None = None,
         temperature: State | None = None,
         enthalpy: State | None = None,
-        composition: Composition | None = None,
-        composition_in: Composition | None = None,
+        composition: Composition = Composition(),
+        composition_in: Composition = Composition(),
         mass_flow_in: State | None = None,
         mass_flow_out: State | None = None,
     ):
         self.setup()
-
-        if self.composition is not None:
-            self.composition.constrain_species()
+        self.composition.update()
 
     @property
     def iteration_variables(self) -> list[State]:
@@ -38,7 +37,7 @@ class SimpleVolume(Component):
 
     @property
     def residuals(self) -> list[float]:
-        self.composition.enforce_constraint()
+        self.composition.update()
 
         return [
             self.mass_flow_in.value - self.mass_flow_out.value,

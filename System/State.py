@@ -255,8 +255,13 @@ class State:
         return State._derived(lambda: other.value - self.value)
 
     def __mul__(self, other):
-        other = self._coerce(other)
-        return State._derived(lambda: self.value * other.value)
+        try:
+            other = self._coerce(other)
+            return State._derived(lambda: self.value * other.value)
+        except (TypeError, ValueError):
+            if hasattr(other, "__rmul__"):
+                return other.__rmul__(self)
+            raise
 
     def __rmul__(self, other):
         other = self._coerce(other)

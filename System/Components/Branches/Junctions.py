@@ -10,10 +10,6 @@ if TYPE_CHECKING:
 
 
 class FlowSplitter(Component):
-    '''
-    If you don't assign a composition to an outlet,
-    it's assumed to be the same as the inlet.
-    '''
 
     def __init__(
         self,
@@ -23,8 +19,8 @@ class FlowSplitter(Component):
         mass_flow_out1: State,
         composition_in: Composition,
         composition_out1: Composition,
-        mass_flow_out2: State | float = 10,
-        composition_out2: Composition = 1,
+        composition_out2: Composition,
+        mass_flow_out2: State | None = None
     ):
         self.setup()
 
@@ -36,5 +32,16 @@ class FlowSplitter(Component):
                 f"{self.name}: composition_out1 contains species not present "
                 f"in composition_in."
             )
+        
+        self.mass_flow_out2 = self.mass_flow_in - self.mass_flow_out1
 
-    def evaluate_states(self): pass
+        self.composition_out2.copy_states(
+            (
+                self.mass_flow_in * self.composition_in
+                - self.mass_flow_out1 * self.composition_out1
+            )
+            / self.mass_flow_out2
+        )
+
+    def evaluate_states(self):
+        self.composition_out2.validate()
