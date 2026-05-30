@@ -14,20 +14,6 @@ if TYPE_CHECKING:
 class FluidLookup(Component):
     """
     CoolProp-backed thermodynamic property lookup component.
-
-    FluidLookup owns a persistent Fluid object and updates it from a selected
-    two-property flash pair, such as pressure-temperature or pressure-enthalpy.
-    The flash inputs are normal State objects, so they may be solver iteration
-    variables or externally shared states.
-
-    Properties requested by other components are exposed as State objects. If a
-    property State is supplied explicitly, it is updated during evaluate_states().
-    If a property is accessed dynamically, a derived State is created.
-
-    To reduce expensive CoolProp calls, the lookup skips the flash when the flash
-    inputs have not changed within tolerance. Property values are also cached after
-    each flash, so repeated reads of density, enthalpy, viscosity, etc. do not
-    re-query the Fluid object. The cache is cleared only when a new flash occurs.
     """
 
     _THERMO_NAMES = (
@@ -84,7 +70,10 @@ class FluidLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-        self.composition = self._initialize_composition(self.fluid)
+        initial_fluid = self.fluid
+        self.composition = self._initialize_composition(initial_fluid)
+        self.fluid = self.composition
+
         self._coolprop_fluid = self._fluid_argument_from_composition()
         self._last_composition_values: tuple[float, ...] | None = None
 
@@ -290,7 +279,7 @@ class FluidLookup(Component):
             getattr(Fluid, name, None),
             property,
         )
-        
+
     def _initialize_composition(
         self,
         fluid: str | dict[str, State | float] | Composition,
@@ -300,7 +289,6 @@ class FluidLookup(Component):
             return fluid
 
         return Composition(fluid)
-
 
     def _fluid_argument_from_composition(self) -> str | dict[str, float]:
 
@@ -312,7 +300,6 @@ class FluidLookup(Component):
 
         return FluidRegistry.coolprop_mixture_dict(values)
 
-
     def _composition_values(self) -> tuple[float, ...]:
         self.composition.update()
 
@@ -320,7 +307,6 @@ class FluidLookup(Component):
             self.composition[species].value
             for species in self.composition.species
         )
-
 
     def _set_fluid_from_composition(self) -> None:
 
@@ -343,7 +329,6 @@ class FluidLookup(Component):
         self._last_composition_values = composition_values
         self._last_flash_values = None
         self._property_cache.clear()
-
 
     def _composition_values_unchanged(
         self,

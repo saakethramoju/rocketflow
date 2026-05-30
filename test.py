@@ -6,7 +6,7 @@ from constants import *
 
 MixtureNetwork = Network("Mixture Flow")
 
-SourceFluid = FluidLookup(
+SourceFluid = IdealGasLookup(
     "Source Fluid",
     MixtureNetwork,
     {"gn2": 0.75, "O2": 0.25},
@@ -19,7 +19,7 @@ SourceFluid = FluidLookup(
 VolumeFluid = FluidLookup(
     "Volume Fluid",
     MixtureNetwork,
-    {'N2': 0.5, "gox": 0.5},
+    {'N2': 0.5, "gox": 0.4, "Argon": 0.1},
     pressure=2e5,
     temperature=300
 )

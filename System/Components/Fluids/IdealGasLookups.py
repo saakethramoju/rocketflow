@@ -94,7 +94,11 @@ class IdealGasLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-        self.composition = self._initialize_composition(self.fluid)
+
+        initial_fluid = self.fluid
+        self.composition = self._initialize_composition(initial_fluid)
+        self.fluid = self.composition
+
         self._last_composition_values: tuple[float, ...] | None = None
 
         self._validate_composition_support()
