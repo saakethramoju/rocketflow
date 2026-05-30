@@ -8,30 +8,47 @@ if TYPE_CHECKING:
     from System import Network, Composition
 
 
-
 class SimpleVolume(Component):
 
-    def __init__(self,
-                 name: str,
-                 network: Network,
-                 pressure: State ,
-                 volume: float,
-                 density: State | None = None,
-                 temperature: State | None = None,
-                 enthalpy: State | None = None,
-                 composition: Composition | None = None,
-                 mass_flow_in: State | None = None,
-                 mass_flow_out: State | None = None):
-
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        pressure: State,
+        volume: float,
+        density: State | None = None,
+        temperature: State | None = None,
+        enthalpy: State | None = None,
+        composition: Composition | None = None,
+        composition_in: Composition | None = None,
+        mass_flow_in: State | None = None,
+        mass_flow_out: State | None = None,
+    ):
         self.setup()
+
+        if self.composition is not None:
+            self.composition.constrain_species()
 
     @property
     def iteration_variables(self) -> list[State]:
-        return [self.pressure]
+        return [
+            self.pressure,
+            *(self.composition[species] for species in self.composition & self.composition_in)
+        ]
 
     @property
     def residuals(self) -> list[float]:
-        return [self.mass_flow_in.value - self.mass_flow_out.value]
+        self.composition.enforce_constraint()
+
+        return [
+            self.mass_flow_in.value - self.mass_flow_out.value,
+            *(self.mass_flow_in.value * self.composition_in[species].value
+                - self.mass_flow_out.value * self.composition[species].value
+                for species in self.composition & self.composition_in
+            ),
+        ]
+
+
 
 
 class IsothermalVolume(Component):

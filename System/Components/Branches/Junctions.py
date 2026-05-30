@@ -6,15 +6,35 @@ from typing import TYPE_CHECKING
 from System import Component, State
 
 if TYPE_CHECKING:
-    from System import Network
+    from System import Network, Composition
 
 
-class FlowSplitter(Component): pass
+class FlowSplitter(Component):
+    '''
+    If you don't assign a composition to an outlet,
+    it's assumed to be the same as the inlet.
+    '''
 
-'''
-If you don't assign a composition to an outlet,
-it's assumed to be the same as the inlet. If you
-do, that will be set to composition_out, and the
-node will take that as composition_in (so add 
-composition_in to the nodes). 
-'''
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        mass_flow_in: State,
+        mass_flow_out1: State,
+        composition_in: Composition,
+        composition_out1: Composition,
+        mass_flow_out2: State | float = 10,
+        composition_out2: Composition = 1,
+    ):
+        self.setup()
+
+        if not self.composition_out1.is_assigned:
+            self.composition_out1 = self.composition_in
+
+        if not self.composition_out1 <= self.composition_in:
+            raise ValueError(
+                f"{self.name}: composition_out1 contains species not present "
+                f"in composition_in."
+            )
+
+    def evaluate_states(self): pass

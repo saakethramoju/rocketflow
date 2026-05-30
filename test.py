@@ -15,12 +15,49 @@ SourceFluid = FluidLookup(
     temperature=300,
 )
 
-D = 6 * IN_TO_M
+VolumeFluid = FluidLookup(
+    "Volume Fluid",
+    MixtureNetwork,
+    {'N2': 0.5, "gox": 0.5},
+    pressure=2e5,
+    temperature=300
+)
+
+D = 3 * IN_TO_M
 A = (np.pi/4) * D**2
 
+Inlet = DischargeCoefficient(
+    "Inlet",
+    MixtureNetwork,
+    upstream_pressure=SourceFluid.pressure,
+    downstream_pressure=VolumeFluid.pressure,
+    density=SourceFluid.density,
+    discharge_coefficient=1,
+    cross_sectional_area=A
+)
 
 
-'''
+Vol = SimpleVolume(
+    "Volume",
+    MixtureNetwork,
+    pressure=VolumeFluid.pressure,
+    volume=1,
+    mass_flow_in=Inlet.mass_flow,
+    composition_in=Composition({"O2":1.0, "N2":0.0}),
+    #composition=VolumeFluid.composition
+)
+
+Outlet = DischargeCoefficient(
+    "Outlet",
+    MixtureNetwork,
+    upstream_pressure=Vol.pressure,
+    downstream_pressure=101325,
+    density=VolumeFluid.density,
+    discharge_coefficient=1,
+    cross_sectional_area=A,
+    mass_flow=Vol.mass_flow_out
+)
+
 solution = SteadyState(MixtureNetwork).solve(
     return_type="dataframe",
     verbose=True,
@@ -28,14 +65,3 @@ solution = SteadyState(MixtureNetwork).solve(
     print_solution=True,
     filename='test.xlsx'
 )
-'''
-
-
-c1 = Composition({"N2": 0.75, "O2": 0.25})
-c2 = Composition({"Ar": 1.0})
-
-c3 = Composition({"N2": 0.5, "O2": 0.25, "Ar": 0.25})
-c4 = Composition({"N2": 1.0})
-
-print((c1 | c2) <= set(c4.species))
-print((c1 | c2) - set(c4.species))
