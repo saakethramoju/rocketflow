@@ -19,7 +19,7 @@ SourceFluid = IdealGasLookup(
 VolumeFluid = FluidLookup(
     "Volume Fluid",
     MixtureNetwork,
-    {'N2': 0.5, "gox": 0.4, "Argon": 0.1},
+    SourceFluid.composition,
     pressure=2e5,
     temperature=300
 )
@@ -54,28 +54,35 @@ Vol = SimpleVolume(
 )
 '''
 
-Separator = FlowSp
+Separator = FlowSplitter(
+    "Separator",
+    MixtureNetwork,
+    pressure=VolumeFluid.pressure,
+    volume=1,
+    mass_flow_in=Inlet.mass_flow,
+    composition_in=VolumeFluid.composition
+)
 
 Outlet1 = DischargeCoefficient(
     "Outlet",
     MixtureNetwork,
-    upstream_pressure=Vol.pressure,
+    upstream_pressure=Separator.pressure,
     downstream_pressure=101325,
     density=VolumeFluid.density,
     discharge_coefficient=1,
-    cross_sectional_area=A/2,
-    mass_flow=outlet_mdot1
+    cross_sectional_area=A,
+    mass_flow=Separator.mass_flow_out1
 )
 
 Outlet2 = DischargeCoefficient(
     "Outlet",
     MixtureNetwork,
-    upstream_pressure=Vol.pressure,
+    upstream_pressure=Separator.pressure,
     downstream_pressure=101325,
     density=VolumeFluid.density,
     discharge_coefficient=1,
     cross_sectional_area=A,
-    mass_flow=outlet_mdot2
+    mass_flow=Separator.mass_flow_out2
 )
 
 solution = SteadyState(MixtureNetwork).solve(
@@ -85,5 +92,3 @@ solution = SteadyState(MixtureNetwork).solve(
     print_solution=True,
     filename='test.xlsx'
 )
-
-print(SourceFluid.composition["N2"].value)

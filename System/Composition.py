@@ -90,24 +90,33 @@ class Composition:
         )
 
 
-    def copy_from(self, other: "Composition") -> None:
-        other.validate()
-        other_species = set(other.species)
+    def copy_from(
+        self,
+        other: "Composition",
+        copy_values: bool = True,
+    ) -> None:
+        """
+        Copy species from another Composition into this one.
 
-        for species in tuple(self.fraction):
-            if species not in other_species:
-                del self.fraction[species]
+        If copy_values=True, copy both species and fraction values.
+        If copy_values=False, only add missing species with zero fraction.
+        """
 
         for species in other.species:
             if species in self.fraction:
-                self.fraction[species].value = other[species].value
+                if copy_values:
+                    self.fraction[species].value = other[species].value
             else:
-                self.fraction[species] = State(other[species].value)
+                value = other[species].value if copy_values else 0.0
+                self.fraction[species] = State(value)
 
         self._zero_fraction_states.clear()
 
-        if self._constrained_species not in self.fraction:
-            self._constrained_species = None
+        if (
+            self._constrained_species is None
+            and self.is_assigned
+        ):
+            self.constrain_species()
         
 
     def __getitem__(self, species: str) -> State:
