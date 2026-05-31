@@ -55,7 +55,7 @@ class IsothermalVolume(Component):
         mass_flow_out: State | None = None
     ):
         self.setup()
-        self.composition.update()
+        #self.composition.update()
     
     @property
     def iteration_variables(self) -> list[State]:
@@ -80,6 +80,8 @@ class Volume(Component):
         temperature: State | None = None,
         density: State | None = None,
         internal_energy: State | None = None,
+        composition: Composition = Composition(),
+        composition_in: Composition = Composition(),
         heat_rate: State | float | None = None,
         total_enthalpy_in: State | None = None,
         total_enthalpy_out: State | None = None,

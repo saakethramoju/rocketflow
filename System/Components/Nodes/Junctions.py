@@ -10,7 +10,13 @@ if TYPE_CHECKING:
 
 
 class FlowSplitter(Component):
-
+    """
+    Notes
+    -----
+    1) Species conservation solves for the composition at 
+       outlet 2 only.
+    2) If species conser
+    """    
     def __init__(
         self,
         name: str,
@@ -77,7 +83,7 @@ class FlowSplitter(Component):
             # Outlet 2 gets the same species basis, but values are solved later.
             self.composition_out2.copy_from(
                 self.composition,
-                copy_values=False,
+                copy_values=True,
             )
 
         elif self.composition.is_assigned:
@@ -92,16 +98,23 @@ class FlowSplitter(Component):
                 copy_values=True,
             )
 
+
     def evaluate_states(self) -> None:
-        # Steady-state: keep internal composition synced to inlet composition.
+        # Steady-state: inlet composition overrides internal composition.
         if self.composition_in.is_assigned:
             self.composition.copy_from(
                 self.composition_in,
                 copy_values=True,
             )
 
-        # Ordinary splitter already copied outlet compositions in __init__.
         if not self._solve_species:
+            return
+
+        # Outlet mdots may be placeholder States before the solver assigns them.
+        if (
+            not self.mass_flow_out1.is_assigned
+            or not self.mass_flow_out2.is_assigned
+        ):
             return
 
         mdot1 = self.mass_flow_out1.value
@@ -122,6 +135,8 @@ class FlowSplitter(Component):
             ) / mdot2
 
         self.composition_out2.validate()
+
+
 
     @property
     def iteration_variables(self) -> list[State]:
