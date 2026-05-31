@@ -72,6 +72,12 @@ class FluidLookup(Component):
 
         initial_fluid = self.fluid
         self.composition = self._initialize_composition(initial_fluid)
+
+        if not self.composition.is_assigned:
+            raise ValueError(
+                f"{self.name}: composition must contain at least one species."
+            )
+
         self.fluid = self.composition
 
         self._coolprop_fluid = self._fluid_argument_from_composition()
@@ -286,9 +292,27 @@ class FluidLookup(Component):
     ) -> Composition:
 
         if isinstance(fluid, Composition):
+            if not fluid.is_assigned:
+                raise ValueError(
+                    f"{self.name}: a Composition object was provided but "
+                    f"contains no species. Provide a valid composition or "
+                    f"use a fluid name/dictionary. An initial guess/"
+                    f"initialization Composition may be necessary for "
+                    f"certain components for which the lookup is being used."
+                )
+                
+
             return fluid
 
-        return Composition(fluid)
+        composition = Composition(fluid)
+
+        if not composition.is_assigned:
+            raise ValueError(
+                f"{self.name}: composition must contain at least one species."
+            )
+
+        return composition
+
 
     def _fluid_argument_from_composition(self) -> str | dict[str, float]:
 

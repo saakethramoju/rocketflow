@@ -94,11 +94,15 @@ class IdealGasLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-
         initial_fluid = self.fluid
         self.composition = self._initialize_composition(initial_fluid)
-        self.fluid = self.composition
 
+        if not self.composition.is_assigned:
+            raise ValueError(
+                f"{self.name}: composition must contain at least one species."
+            )
+
+        self.fluid = self.composition
         self._last_composition_values: tuple[float, ...] | None = None
 
         self._validate_composition_support()
@@ -452,16 +456,30 @@ class IdealGasLookup(Component):
             getattr(IdealGas, name, None),
             property,
         )
-        
+
     def _initialize_composition(
         self,
         fluid: str | dict[str, State | float] | Composition,
     ) -> Composition:
 
         if isinstance(fluid, Composition):
+            if not fluid.is_assigned:
+                raise ValueError(
+                    f"{self.name}: a Composition object was provided but "
+                    f"contains no species. Provide a valid composition or "
+                    f"use a fluid name/dictionary."
+                )
+
             return fluid
 
-        return Composition(fluid)
+        composition = Composition(fluid)
+
+        if not composition.is_assigned:
+            raise ValueError(
+                f"{self.name}: composition must contain at least one species."
+            )
+
+        return composition
 
 
     def _validate_composition_support(self) -> None:
