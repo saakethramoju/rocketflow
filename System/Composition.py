@@ -46,7 +46,6 @@ class Composition:
 
     @property
     def values(self) -> dict[str, float]:
-        self.update()
         return {
             species: state.value
             for species, state in self.fraction.items()
@@ -90,6 +89,27 @@ class Composition:
             if species != self._constrained_species
         )
 
+
+    def copy_from(self, other: "Composition") -> None:
+        other.validate()
+        other_species = set(other.species)
+
+        for species in tuple(self.fraction):
+            if species not in other_species:
+                del self.fraction[species]
+
+        for species in other.species:
+            if species in self.fraction:
+                self.fraction[species].value = other[species].value
+            else:
+                self.fraction[species] = State(other[species].value)
+
+        self._zero_fraction_states.clear()
+
+        if self._constrained_species not in self.fraction:
+            self._constrained_species = None
+        
+
     def __getitem__(self, species: str) -> State:
         species = FluidRegistry.name(species)
 
@@ -101,17 +121,19 @@ class Composition:
 
         return self._zero_fraction_states[species]
 
+
     def __and__(self, other: "Composition | None") -> tuple[str, ...]:
-        # Returns only ITERABLE species intersections
+        """
+        Returns the species intersection between two compositions.
+        """
+
         if other is None or not self.is_assigned or not other.is_assigned:
             return ()
-
-        self.update()
 
         return tuple(
             species
             for species in self.species
-            if species in other and species != self._constrained_species
+            if species in other
         )
 
     def __iter__(self):

@@ -37,6 +37,8 @@ Inlet = DischargeCoefficient(
     cross_sectional_area=A
 )
 
+
+'''
 outlet_mdot1 = State()
 outlet_mdot2 = State()
 
@@ -50,7 +52,9 @@ Vol = SimpleVolume(
     composition=VolumeFluid.composition,
     mass_flow_out=outlet_mdot1 + outlet_mdot2
 )
+'''
 
+Separator = FlowSp
 
 Outlet1 = DischargeCoefficient(
     "Outlet",
@@ -81,3 +85,5 @@ solution = SteadyState(MixtureNetwork).solve(
     print_solution=True,
     filename='test.xlsx'
 )
+
+print(SourceFluid.composition["N2"].value)
