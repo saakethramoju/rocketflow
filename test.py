@@ -37,6 +37,9 @@ Inlet = DischargeCoefficient(
     cross_sectional_area=A
 )
 
+outlet_mdot1 = State()
+outlet_mdot2 = State()
+
 Vol = SimpleVolume(
     "Volume",
     MixtureNetwork,
@@ -45,10 +48,22 @@ Vol = SimpleVolume(
     mass_flow_in=Inlet.mass_flow,
     composition_in=SourceFluid.composition,
     composition=VolumeFluid.composition,
+    mass_flow_out=outlet_mdot1 + outlet_mdot2
 )
 
 
-Outlet = DischargeCoefficient(
+Outlet1 = DischargeCoefficient(
+    "Outlet",
+    MixtureNetwork,
+    upstream_pressure=Vol.pressure,
+    downstream_pressure=101325,
+    density=VolumeFluid.density,
+    discharge_coefficient=1,
+    cross_sectional_area=A/2,
+    mass_flow=outlet_mdot1
+)
+
+Outlet2 = DischargeCoefficient(
     "Outlet",
     MixtureNetwork,
     upstream_pressure=Vol.pressure,
@@ -56,7 +71,7 @@ Outlet = DischargeCoefficient(
     density=VolumeFluid.density,
     discharge_coefficient=1,
     cross_sectional_area=A,
-    mass_flow=Vol.mass_flow_out
+    mass_flow=outlet_mdot2
 )
 
 solution = SteadyState(MixtureNetwork).solve(
