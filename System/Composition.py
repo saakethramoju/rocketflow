@@ -95,13 +95,6 @@ class Composition:
         other: "Composition",
         copy_values: bool = True,
     ) -> None:
-        """
-        Copy species from another Composition into this one.
-
-        If copy_values=True, copy both species and fraction values.
-        If copy_values=False, only add missing species with zero fraction.
-        """
-
         for species in other.species:
             if species in self.fraction:
                 if copy_values:
@@ -112,11 +105,11 @@ class Composition:
 
         self._zero_fraction_states.clear()
 
-        if (
-            self._constrained_species is None
-            and self.is_assigned
-        ):
-            self.constrain_species()
+        if copy_values:
+            if self._constrained_species is None and self.is_assigned:
+                self.constrain_species()
+            else:
+                self.enforce_constraint()
         
 
     def __getitem__(self, species: str) -> State:
