@@ -16,7 +16,8 @@ SourceFluid = FluidLookup(
     #{"gn2": 0.75, "O2": 0.24, "Ar": 0.01},
     {"gn2": 0.9, "O2": 0.1},
     pressure=3e5,
-    temperature=300,
+    #temperature=300,
+    quality=0.5
 )
 
 VolumeFluid = FluidLookup(
@@ -39,8 +40,8 @@ SeparatorOutlet1Fluid = FluidLookup(
 SeparatorOutlet2Fluid = FluidLookup(
     "Separator Outlet 2 Fluid",
     MixtureNetwork,
-    {"gn2": 1.0, "O2": 0},
-    #"o2", # Doesn't Work, figure out why, also 
+    #{"gn2": 1.0, "O2": 0},
+    "o2", # Doesn't Work, figure out why, also 
     pressure=VolumeFluid.pressure,
     temperature=VolumeFluid.temperature,
 )
