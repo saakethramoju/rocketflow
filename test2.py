@@ -7,7 +7,21 @@ from constants import *
 MixtureNetwork = Network("Mixture Flow")
 
 # ------------------------------------------------------------------
-# Fluid properties
+# Geometry
+# ------------------------------------------------------------------
+
+D = 3 * IN_TO_M
+A = (np.pi / 4) * D**2
+
+# ------------------------------------------------------------------
+# Shared outlet compositions
+# ------------------------------------------------------------------
+
+SeparatorOutlet1Composition = Composition({"Ar": 1.0})
+SeparatorOutlet2Composition = Composition()
+
+# ------------------------------------------------------------------
+# Fluid lookups first
 # ------------------------------------------------------------------
 
 SourceFluid = FluidLookup(
@@ -26,22 +40,24 @@ VolumeFluid = FluidLookup(
     temperature=300,
 )
 
-# ------------------------------------------------------------------
-# Geometry
-# ------------------------------------------------------------------
+SeparatorOutlet1Fluid = FluidLookup(
+    "Separator Outlet 1 Fluid",
+    MixtureNetwork,
+    SeparatorOutlet1Composition,
+    pressure=VolumeFluid.pressure,
+    temperature=VolumeFluid.temperature,
+)
 
-D = 3 * IN_TO_M
-A = (np.pi / 4) * D**2
+SeparatorOutlet2Fluid = FluidLookup(
+    "Separator Outlet 2 Fluid",
+    MixtureNetwork,
+    SeparatorOutlet2Composition,
+    pressure=VolumeFluid.pressure,
+    temperature=VolumeFluid.temperature,
+)
 
 # ------------------------------------------------------------------
-# Outlet compositions
-# ------------------------------------------------------------------
-
-SeparatorOutlet1Composition = Composition({"Ar": 1.0})
-SeparatorOutlet2Composition = Composition()
-
-# ------------------------------------------------------------------
-# Components
+# Components after lookups
 # ------------------------------------------------------------------
 
 Inlet = DischargeCoefficient(
@@ -63,22 +79,6 @@ Separator = FlowSplitter(
     composition=VolumeFluid.composition,
     composition_out1=SeparatorOutlet1Composition,
     composition_out2=SeparatorOutlet2Composition,
-)
-
-SeparatorOutlet1Fluid = FluidLookup(
-    "Separator Outlet 1 Fluid",
-    MixtureNetwork,
-    SeparatorOutlet1Composition,
-    pressure=VolumeFluid.pressure,
-    temperature=VolumeFluid.temperature,
-)
-
-SeparatorOutlet2Fluid = FluidLookup(
-    "Separator Outlet 2 Fluid",
-    MixtureNetwork,
-    SeparatorOutlet2Composition,
-    pressure=VolumeFluid.pressure,
-    temperature=VolumeFluid.temperature,
 )
 
 Outlet1 = DischargeCoefficient(

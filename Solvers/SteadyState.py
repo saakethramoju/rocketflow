@@ -1,3 +1,4 @@
+# SteadyState.py
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
@@ -12,25 +13,224 @@ if TYPE_CHECKING:
 
 
 class SteadyState:
+    """
+    Steady-state nonlinear solver.
+
+    Overall solving process
+    -----------------------
+    1. Run network.pre_evaluation()
+       Components can initialize internal helper states.
+
+    2. Collect the current iteration variables into a vector x0.
+       These are solver-owned States such as pressures, enthalpies,
+       friction factors, pump speeds, and Balance variables.
+
+    3. For each solver residual call:
+          a. Assign the solver vector x into the network States.
+          b. Evaluate component states repeatedly until derived states settle.
+          c. Restore iteration variables during settling so components cannot
+             overwrite the solver's current iterate.
+          d. Collect component residuals and balance residuals.
+
+    4. scipy.optimize.least_squares finite-differences the residual function,
+       builds a Jacobian, and computes a trust-region correction.
+
+    5. The process repeats until scipy reports convergence and the maximum
+       residual is below rtol.
+
+    """
 
     def __init__(self, network: Network):
         self.network = network
         self.console = Console()
 
+    # ------------------------------------------------------------------
+    # Residual function passed to scipy
+    # ------------------------------------------------------------------
+
     def residual(self, x: np.ndarray) -> np.ndarray:
+        """
+        Map solver vector x to residual vector r.
+
+        scipy calls this many times while solving.
+        """
+        # Assign current solver iterate to network State objects.
         self.network.assign_iteration_values(list(x))
 
         try:
-            self.network.evaluate_states()
+            # Propagate explicit component states to a consistent state.
+            self.evaluate_network_states()
+
+            # Collect component and balance residuals.
             return np.array(self.network.residuals, dtype=float)
 
         except Exception as e:
-
             raise RuntimeError(
                 "Solver encountered an error while evaluating the network "
-                "inside network.evaluate_states().\n\n"
+                "inside evaluate_network_states().\n\n"
                 f"Original error:\n{type(e).__name__}: {e}"
             ) from e
+
+    # ------------------------------------------------------------------
+    # Order-independent state evaluation for steady-state solving
+    # ------------------------------------------------------------------
+
+    def evaluate_network_states(
+        self,
+        max_passes: int = 20,
+        tolerance: float = 1e-10,
+    ) -> None:
+        """
+        Repeatedly evaluate components until derived State values settle.
+
+        This reduces dependence on user component order. For example:
+
+            composition -> density -> mass_flow
+
+        may require several passes before the final mass flow is consistent
+        with the final composition.
+
+        Iteration variables are protected because they belong to the nonlinear
+        solver, not to explicit component propagation.
+        """
+        # Save current solver-owned variables.
+        iteration_snapshot = self._snapshot_iteration_variables()
+
+        for _ in range(max_passes):
+            # Track non-iteration states before this pass.
+            old_values = self._collect_state_values()
+
+            for c in self.network.component_list:
+                # Restore solver variables before each component.
+                self._restore_iteration_variables(iteration_snapshot)
+
+                # Let the component update its derived states.
+                c.evaluate_states()
+
+                # Restore solver variables again in case the component changed them.
+                self._restore_iteration_variables(iteration_snapshot)
+
+            # Track non-iteration states after this pass.
+            new_values = self._collect_state_values()
+
+            # Stop when another pass would not materially change the network.
+            if self._max_state_change(old_values, new_values) < tolerance:
+                return
+
+    def _snapshot_iteration_variables(self) -> dict[int, float]:
+        """
+        Save current values of all solver-owned iteration variables.
+
+        These values represent the current solver iterate x.
+        """
+        snapshot = {}
+
+        for var in self.network.collect_all_iteration_variables():
+            if var.is_assigned:
+                snapshot[id(var)] = float(var.value)
+
+        return snapshot
+
+    def _restore_iteration_variables(
+        self,
+        snapshot: dict[int, float],
+    ) -> None:
+        """
+        Restore solver-owned iteration variables.
+
+        This prevents evaluate_states() from permanently overwriting x.
+        """
+        for var in self.network.collect_all_iteration_variables():
+            key = id(var)
+
+            if key in snapshot:
+                var.value = snapshot[key]
+
+    def _collect_state_values(self) -> dict[int, float]:
+        """
+        Collect assigned non-iteration State values.
+
+        These values are used only to decide whether explicit state propagation
+        has settled.
+        """
+        values = {}
+
+        # Iteration variables are ignored because they are fixed by the solver.
+        iteration_ids = {
+            id(var)
+            for var in self.network.collect_all_iteration_variables()
+        }
+
+        def collect(attr_value):
+            # Composition-like object.
+            if hasattr(attr_value, "fraction"):
+                for _, state in attr_value:
+                    if id(state) in iteration_ids:
+                        continue
+
+                    if state.is_assigned:
+                        try:
+                            values[id(state)] = float(state.value)
+                        except Exception:
+                            pass
+                return
+
+            # State-like object.
+            if hasattr(attr_value, "is_assigned"):
+                if id(attr_value) in iteration_ids:
+                    return
+
+                if attr_value.is_assigned:
+                    try:
+                        values[id(attr_value)] = float(attr_value.value)
+                    except Exception:
+                        pass
+
+        # Scan component attributes.
+        for comp in self.network.component_list:
+            for attr_value in comp.__dict__.values():
+                collect(attr_value)
+
+        # Scan balance attributes too.
+        for bal in self.network.balance_list:
+            for attr_value in bal.__dict__.values():
+                collect(attr_value)
+
+        return values
+
+    def _max_state_change(
+        self,
+        old: dict[int, float],
+        new: dict[int, float],
+    ) -> float:
+        """
+        Return the largest normalized change between two state snapshots.
+
+        A small value means the explicit state propagation has settled.
+        """
+        max_change = 0.0
+
+        for key, new_value in new.items():
+            old_value = old.get(key)
+
+            # Newly assigned state.
+            if old_value is None:
+                max_change = max(max_change, abs(new_value))
+                continue
+
+            # Relative change, protected from division by tiny values.
+            scale = max(abs(new_value), 1.0)
+
+            max_change = max(
+                max_change,
+                abs(new_value - old_value) / scale,
+            )
+
+        return max_change
+
+    # ------------------------------------------------------------------
+    # Static evaluation path
+    # ------------------------------------------------------------------
 
     def static_evaluate(
         self,
@@ -40,13 +240,13 @@ class SteadyState:
         print_solution: bool = False,
     ):
         """
-        Evaluate a static network without nonlinear solving.
+        Evaluate a network without nonlinear solving.
 
-        Runs pre_evaluation() and evaluate_states(), then saves/returns
-        the network state.
+        This still uses steady-state state-settling so component order is less
+        important even for static evaluations.
         """
         self.network.pre_evaluation()
-        self.network.evaluate_states()
+        self.evaluate_network_states()
 
         if verbose:
             self._verbose_static_print()
@@ -60,6 +260,10 @@ class SteadyState:
             self.print_solution()
 
         return solution
+
+    # ------------------------------------------------------------------
+    # Main nonlinear solve
+    # ------------------------------------------------------------------
 
     def solve(
         self,
@@ -75,7 +279,15 @@ class SteadyState:
         gtol: float = 1e-8,
         rtol: float = 1e-2,
     ):
+        """
+        Solve the steady-state nonlinear system.
 
+        The unknowns are all component iteration variables plus Balance
+        variables. The residuals are all component residuals plus Balance
+        residuals.
+        """
+
+        # Static mode skips nonlinear solving.
         if static:
             return self.static_evaluate(
                 filename=filename,
@@ -84,6 +296,7 @@ class SteadyState:
                 print_solution=print_solution,
             )
 
+        # Validate selected least_squares method.
         method = solver_method.lower()
 
         valid_solver_methods = ("trf", "dogbox", "lm")
@@ -95,6 +308,7 @@ class SteadyState:
                 f"Got '{solver_method}'."
             )
 
+        # Validate selected finite-difference Jacobian method.
         jac = jacobian_method.lower()
 
         valid_jac_methods = ("2-point", "3-point")
@@ -106,26 +320,31 @@ class SteadyState:
                 f"Got '{jacobian_method}'."
             )
 
+        # Validate residual acceptance tolerance.
         if rtol <= 0.0:
             raise ValueError(
                 f"Residual tolerance (rtol) must be positive. "
                 f"Got {rtol}"
             )
 
+        # One-time component setup.
         self.network.pre_evaluation()
 
+        # Initial solver vector.
         x0 = np.array(
             self.network.iteration_values,
             dtype=float,
         )
 
-        self.network.evaluate_states()
+        # Initial state propagation and residual vector.
+        self.evaluate_network_states()
 
         r0 = np.array(
             self.network.residuals,
             dtype=float,
         )
 
+        # If there is nothing to solve, just export current network state.
         no_iteration_variables = len(x0) == 0
         no_residuals = len(r0) == 0
 
@@ -137,6 +356,7 @@ class SteadyState:
                 print_solution=print_solution,
             )
 
+        # least_squares requires at least as many residuals as unknowns.
         if len(r0) < len(x0):
             raise ValueError(
                 "SteadyState solve requires at least as many "
@@ -147,12 +367,14 @@ class SteadyState:
 
         overconstrained = len(r0) > len(x0)
 
+        # Build scipy Bounds object from State metadata.
         bounds = Bounds(
             self.network.lower_bounds,
             self.network.upper_bounds,
             self.network.keep_feasible,
         )
 
+        # Main nonlinear solve.
         sol = least_squares(
             fun=self.residual,
             x0=x0,
@@ -165,6 +387,7 @@ class SteadyState:
             gtol=gtol,
         )
 
+        # Optional rich solver summary.
         if verbose:
             self._verbose_print(
                 sol=sol,
@@ -178,6 +401,7 @@ class SteadyState:
                 overconstrained=overconstrained,
             )
 
+        # Check final residual quality.
         final_residual = np.array(
             sol.fun,
             dtype=float,
@@ -198,12 +422,15 @@ class SteadyState:
                 f"residual tolerance = {rtol:.3e}"
             )
 
+        # Load final solver result into network.
         self.network.assign_iteration_values(
             list(sol.x)
         )
 
-        self.network.evaluate_states()
+        # Re-evaluate final derived states using final solver variables.
+        self.evaluate_network_states()
 
+        # Save/export final solution.
         solution = self.network.save(
             filename=filename,
             return_type=return_type,
@@ -214,8 +441,12 @@ class SteadyState:
 
         return solution
 
-    def print_solution(self) -> None:
+    # ------------------------------------------------------------------
+    # Solution printing
+    # ------------------------------------------------------------------
 
+    def print_solution(self) -> None:
+        """Print exported network state as a rich table."""
         records = self.network.save(return_type="dict")
 
         table = Table(
@@ -255,8 +486,12 @@ class SteadyState:
         self.console.print(table)
         self.console.print()
 
-    def _verbose_static_print(self) -> None:
+    # ------------------------------------------------------------------
+    # Verbose static evaluation printing
+    # ------------------------------------------------------------------
 
+    def _verbose_static_print(self) -> None:
+        """Print a short summary for static evaluation mode."""
         table = Table(
             title="Static Network Evaluation",
             box=box.SIMPLE_HEAVY,
@@ -280,6 +515,9 @@ class SteadyState:
         self.console.print(table)
         self.console.print()
 
+    # ------------------------------------------------------------------
+    # Verbose nonlinear solve printing
+    # ------------------------------------------------------------------
 
     def _verbose_print(
         self,
@@ -293,6 +531,7 @@ class SteadyState:
         rtol: float,
         overconstrained: bool = False,
     ) -> None:
+        """Print solver summary, final variables, and final residuals."""
 
         max_residual = np.max(np.abs(sol.fun))
         rms_residual = np.sqrt(np.mean(sol.fun**2))
@@ -303,6 +542,9 @@ class SteadyState:
             np.abs(dx) / np.maximum(np.abs(sol.x), 1.0)
         )
 
+        # --------------------------------------------------------------
+        # Solver summary table.
+        # --------------------------------------------------------------
         summary = Table(
             title="Steady-State Solver Summary",
             box=box.SIMPLE_HEAVY,
@@ -345,6 +587,9 @@ class SteadyState:
         summary.add_row("xtol", f"{xtol:.3e}")
         summary.add_row("gtol", f"{gtol:.3e}")
 
+        # --------------------------------------------------------------
+        # Iteration variable table.
+        # --------------------------------------------------------------
         variables = Table(
             title="Solution Variables",
             box=box.SIMPLE,
@@ -357,13 +602,11 @@ class SteadyState:
         variables.add_column("Value", justify="right", style="#D84135")
 
         def find_variable_labels(target):
-
+            """Find all component/balance attributes that reference a State."""
             labels = []
 
             for component in self.network.component_list:
-
                 for attr_name, attr_value in component.__dict__.items():
-
                     if attr_value is target:
                         labels.append(
                             f"{component.name}.{attr_name}"
@@ -377,11 +620,8 @@ class SteadyState:
                                 )
 
             for balance in self.network.balance_list:
-
                 for attr_name, attr_value in balance.__dict__.items():
-
                     if attr_value is target:
-
                         labels.append(
                             f"{balance.name}.{attr_name}"
                         )
@@ -397,7 +637,6 @@ class SteadyState:
         ]
 
         for i, val in enumerate(sol.x):
-
             label = (
                 "\n".join(variable_labels[i])
                 if i < len(variable_labels)
@@ -410,6 +649,9 @@ class SteadyState:
                 f"{val:.6e}",
             )
 
+        # --------------------------------------------------------------
+        # Residual table.
+        # --------------------------------------------------------------
         residuals = Table(
             title="Residuals",
             box=box.SIMPLE,
@@ -424,7 +666,6 @@ class SteadyState:
         residual_labels = []
 
         for component in self.network.component_list:
-
             component_residuals = component.residuals
 
             if isinstance(component_residuals, (list, tuple)):
@@ -434,7 +675,6 @@ class SteadyState:
                 residual_labels.append(f"{component.name}.residual")
 
         for balance in self.network.balance_list:
-
             balance_residuals = balance.residuals
 
             if isinstance(balance_residuals, (list, tuple)):
@@ -444,7 +684,6 @@ class SteadyState:
                 residual_labels.append(f"{balance.name}.residual")
 
         for i, r in enumerate(sol.fun):
-
             label = (
                 residual_labels[i]
                 if i < len(residual_labels)
@@ -462,217 +701,3 @@ class SteadyState:
         self.console.print(variables)
         self.console.print(residuals)
         self.console.print()
-
-
-'''
-class SteadyStateOld:
-
-    def __init__(self, network: Network):
-        self.network = network
-    """
-    def residual(self, x: np.ndarray) -> np.ndarray:
-        self.network.assign_iteration_values(list(x))
-        # self.network.pre_evaluation()
-        self.network.evaluate_states()
-        return np.array(self.network.scaled_residuals, dtype=float)
-    """
-
-    def residual(self, x: np.ndarray) -> np.ndarray:
-        self.network.assign_iteration_values(list(x))
-        n_residuals = len(self.network.residuals)
-        try:
-            self.network.evaluate_states()
-            return np.array(self.network.residuals, dtype=float)
-        except Exception:
-            penalty = np.ones(n_residuals, dtype=float) * 1e6
-            # add x-dependence so finite-difference Jacobian is nonzero
-            penalty += 1e-3 * np.linalg.norm(x)
-            return penalty
-        
-
-    def static_evaluate(
-        self,
-        filename: str | None = None,
-        return_type: str = "dict",
-        verbose: bool = True,
-    ):
-        """
-        Evaluate a static network without nonlinear solving.
-
-        Runs pre_evaluation() and evaluate_states(), then saves/returns
-        the network state.
-        """
-        self.network.pre_evaluation()
-        self.network.evaluate_states()
-
-        if verbose:
-            print("\n" + "=" * 50)
-            print("        STATIC NETWORK EVALUATION")
-            print("=" * 50)
-            print("  No nonlinear solve was performed.")
-            print("=" * 50 + "\n")
-
-        return self.network.save(filename=filename, return_type=return_type)
-
-
-    def solve(
-        self,
-        filename: str | None = None,
-        return_type: str = "dict",
-        verbose: bool = True,
-        static: bool = False,
-    ):
-        """
-        Solve the network steady-state nonlinear system.
-
-        Behavior
-        --------
-        - If `static=True`, the network is only evaluated once
-        without nonlinear iteration.
-
-        - If the network has no iteration variables and no residual
-        equations, the network is only evaluated once without nonlinear
-        iteration.
-
-        - `root()` is used for square, unconstrained systems:
-            number of residuals == number of iteration variables
-
-        - `least_squares()` is automatically used when:
-            - any variable bounds exist
-            - the system is overdetermined
-                (more residuals than iteration variables)
-
-        - If `root()` fails to converge, the solver automatically
-        falls back to `least_squares()`.
-        """
-
-        if static:
-            return self.static_evaluate(
-                filename=filename,
-                return_type=return_type,
-                verbose=verbose,
-            )
-
-        self.network.pre_evaluation()
-
-        x0 = np.array(self.network.iteration_values, dtype=float)
-
-        self.network.evaluate_states()
-
-        r0 = np.array(self.network.residuals, dtype=float)
-
-        no_iteration_variables = len(x0) == 0
-        no_residuals = len(r0) == 0
-
-        if no_iteration_variables and no_residuals:
-            return self.static_evaluate(
-                filename=filename,
-                return_type=return_type,
-                verbose=verbose,
-            )
-
-        if len(r0) < len(x0):
-            raise ValueError(
-                f"SteadyState solve requires at least as many residuals as "
-                f"iteration variables. Got {len(x0)} iteration variables "
-                f"and {len(r0)} residuals."
-            )
-
-        bounds = Bounds(
-            self.network.lower_bounds,
-            self.network.upper_bounds,
-            self.network.keep_feasible,
-        )
-
-        switched_to_least_squares = False
-
-        if self.network.has_bounds or len(r0) > len(x0):
-            solver_name = "scipy.optimize.least_squares"
-            sol = least_squares(self.residual, x0, bounds=bounds)
-
-        else:
-            solver_name = "scipy.optimize.root"
-            sol = root(self.residual, x0)
-
-            if not sol.success:
-                switched_to_least_squares = True
-                solver_name = "scipy.optimize.least_squares (fallback)"
-                sol = least_squares(self.residual, x0, bounds=bounds)
-
-        if verbose and switched_to_least_squares:
-            print(
-                "\n[Warning] root() failed, so the solver switched to "
-                "least_squares().\n"
-            )
-
-        if verbose:
-            self._verbose_print(sol, solver_name)
-
-        final_residual = np.array(sol.fun, dtype=float)
-
-        if not sol.success or np.max(np.abs(final_residual)) > 1e3:
-            raise RuntimeError(
-                "Steady-state solve failed or converged to penalty residuals.\n"
-                f"success = {sol.success}\n"
-                f"message = {sol.message}\n"
-                f"max |residual| = {np.max(np.abs(final_residual)):.3e}"
-            )
-
-        self.network.assign_iteration_values(list(sol.x))
-        self.network.evaluate_states()
-
-        solution = self.network.save(filename=filename, return_type=return_type)
-
-        return solution
-
-
-
-    def _verbose_print(self, sol, solver_name: str) -> None:
-        print("\n" + "=" * 50)
-        print("        STEADY-STATE SOLVER SUMMARY")
-        print("=" * 50)
-
-        print("\n[Solver]")
-        print(f"  Method         : {solver_name}")
-
-        print("\n[Convergence]")
-        print(f"  Success        : {sol.success}")
-        print(f"  Status         : {sol.status}")
-        print(f"  Message        : {sol.message}")
-
-        print("\n[Performance]")
-        print(f"  Function evals : {sol.nfev}")
-        if hasattr(sol, "njev"):
-            print(f"  Jacobian evals : {sol.njev}")
-
-        print("\n[Optimality]")
-        if hasattr(sol, "cost"):
-            print(f"  Cost (½‖r‖²)   : {sol.cost:.6e}")
-        if hasattr(sol, "optimality"):
-            print(f"  Optimality     : {sol.optimality:.3e}")
-
-        print("\n[Solution Variables]")
-        iter_vars = self.network.iteration_variables
-        if isinstance(iter_vars, str):
-            iter_vars = [iter_vars]
-
-        if len(iter_vars) == len(sol.x):
-            for name, val in zip(iter_vars, sol.x):
-                print(f"  {str(name):<40} = {val:.6e}")
-        else:
-            for i, val in enumerate(sol.x):
-                print(f"  x[{i:<2}] {'':<34} = {val:.6e}")
-
-        print("\n[Residuals]")
-        for i, r in enumerate(sol.fun):
-            print(f"  r[{i:<2}] {'':<34} = {r:.3e}")
-
-        max_resid = np.max(np.abs(sol.fun))
-        rms_resid = np.sqrt(np.mean(sol.fun**2))
-
-        print("\n[Residual Summary]")
-        print(f"  Max |residual| : {max_resid:.3e}")
-        print(f"  RMS residual   : {rms_resid:.3e}")
-
-        print("=" * 50 + "\n")
-'''

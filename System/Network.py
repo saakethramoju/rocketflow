@@ -1,3 +1,4 @@
+# Network.py
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -7,49 +8,76 @@ if TYPE_CHECKING:
 
 
 class Network:
+    """
+    Lightweight container for components and algebraic balances.
+
+    Network stores model structure:
+        - components
+        - balances
+        - shared iteration variables
+        - residual collection
+        - solution export
+
+    """
 
     def __init__(self, name: str):
         self.name = name
         self.component_list = []
         self.balance_list = []
 
+    # ------------------------------------------------------------------
+    # Registration
+    # ------------------------------------------------------------------
+
     def add_component(self, component: Component) -> None:
+        """Register a component with the network."""
         self.component_list.append(component)
 
     def add_balance(self, balance: Balance) -> None:
+        """Register an algebraic balance with the network."""
         self.balance_list.append(balance)
 
     @property
     def components(self) -> list[str]:
+        """Return component names."""
         return [c.name for c in self.component_list]
 
     @property
     def balances(self) -> list[str]:
+        """Return balance names."""
         return [b.name for b in self.balance_list]
 
-
-    # -------------- STEADY-STATE -------------- #
+    # ------------------------------------------------------------------
+    # Iteration variable metadata
+    # ------------------------------------------------------------------
 
     @property
     def lower_bounds(self) -> list[float]:
+        """Lower bounds for all component and balance iteration variables."""
         return [var.lower_bound for var in self.collect_all_iteration_variables()]
-    
+
     @property
     def upper_bounds(self) -> list[float]:
+        """Upper bounds for all component and balance iteration variables."""
         return [var.upper_bound for var in self.collect_all_iteration_variables()]
-    
+
     @property
     def has_bounds(self) -> bool:
+        """True if any iteration variable has finite bounds."""
         return any([var.has_bounds for var in self.collect_all_iteration_variables()])
-    
+
     @property
     def keep_feasible(self) -> list[float]:
+        """Per-variable keep_feasible flags for scipy Bounds."""
         return [var.keep_feasible for var in self.collect_all_iteration_variables()]
-
-            
 
     @property
     def iteration_variables(self) -> str:
+        """
+        Return readable names for all iteration variables.
+
+        This is used for debugging/printing, not for solving.
+        """
         names = []
 
         def find_name(obj, target):
@@ -58,29 +86,42 @@ class Network:
                     return f"{obj.name}:{k}"
             return f"{obj.name}:<unknown>"
 
-        # components
         for comp in self.component_list:
             for var in comp.iteration_variables:
                 names.append(find_name(comp, var))
 
-        # balances
         for bal in self.balance_list:
             for var in bal.iteration_variables:
                 names.append(find_name(bal, var))
 
         return "\n".join(names)
-            
 
     @property
     def iteration_values(self) -> list[float]:
+        """
+        Current numeric values of all iteration variables.
+
+        Also checks that a Balance is not trying to solve for a State that is
+        already owned by a component residual equation.
+        """
         self._validate_no_iteration_overlap()
         return [var.value for var in self.collect_all_iteration_variables()]
 
+    # ------------------------------------------------------------------
+    # Residual collection
+    # ------------------------------------------------------------------
 
     @property
     def residuals(self) -> list[float]:
+        """
+        Collect all component residuals and balance residuals.
+
+        Components contribute physics residuals.
+        Balances contribute user-requested algebraic targets.
+        """
         residuals = []
 
+        # Component residuals.
         for comp in self.component_list:
             try:
                 comp_residuals = comp.residuals
@@ -106,6 +147,7 @@ class Network:
             else:
                 residuals.append(comp_residuals)
 
+        # Balance residuals.
         balance_residuals = [
             r for balance in self.balance_list for r in balance.residuals
         ]
@@ -114,246 +156,103 @@ class Network:
 
         return residuals
 
-
+    # ------------------------------------------------------------------
+    # Basic network evaluation
+    # ------------------------------------------------------------------
 
     def pre_evaluation(self) -> None:
+        """
+        Run one-time component setup before solving/evaluation.
+
+        This stays simple and generic. The solver decides how many times
+        evaluate_states() should be called.
+        """
         for c in self.component_list:
             c.pre_evaluation()
 
-
-    def evaluate_states(
-        self,
-        max_passes: int = 20,
-        tolerance: float = 1e-10,
-    ) -> None:
+    def evaluate_states(self) -> None:
         """
-        Evaluate all component states until explicit state updates stop changing.
+        Evaluate each component once in user-defined order.
 
-        This removes dependence on component ordering. For example:
-
-            composition -> density -> mass_flow
-
-        may require several passes to propagate through the network.
-
-        Iteration variables are frozen during settling so components cannot
-        accidentally overwrite solver-owned states (pressure, enthalpy,
-        balance variables, etc.).
-
-        Examples
-        --------
-        FluidLookup -> Darcy -> Volume
-
-        or
-
-        Composition -> FluidLookup -> FlowSplitter -> Darcy
-
-        may require multiple passes before all derived states are consistent.
-
+        This is intentionally simple. Order-independent repeated settling is
+        handled by SteadyState, not by Network.
         """
+        for c in self.component_list:
+            c.evaluate_states()
 
-        # Save current solver variables.
-        iteration_snapshot = self._snapshot_iteration_variables()
-
-        for _ in range(max_passes):
-
-            # Record all non-iteration state values before this pass.
-            old_values = self._collect_state_values()
-
-            for c in self.component_list:
-
-                # Protect solver-owned variables.
-                self._restore_iteration_variables(iteration_snapshot)
-
-                c.evaluate_states()
-
-                # Protect solver-owned variables again in case a component
-                # modified them.
-                self._restore_iteration_variables(iteration_snapshot)
-
-            # Record all non-iteration state values after this pass.
-            new_values = self._collect_state_values()
-
-            # Stop once explicit state updates have settled.
-            if self._max_state_change(old_values, new_values) < tolerance:
-                return
-                    
-    def _snapshot_iteration_variables(self) -> dict[int, float]:
-        """
-        Store the current values of all iteration variables.
-
-        These values belong to the nonlinear solver and should not be
-        modified by evaluate_states() during settling.
-        """
-
-        snapshot = {}
-
-        for var in self.collect_all_iteration_variables():
-            if var.is_assigned:
-                snapshot[id(var)] = float(var.value)
-
-        return snapshot
-
-
-    def _restore_iteration_variables(
-        self,
-        snapshot: dict[int, float],
-    ) -> None:
-        """
-        Restore solver-owned iteration variables to their original values.
-
-        This prevents component evaluation from overwriting the solver's
-        current iterate.
-        """
-
-        for var in self.collect_all_iteration_variables():
-            key = id(var)
-
-            if key in snapshot:
-                var.value = snapshot[key]
-            
-
-    def _collect_state_values(self) -> dict[int, float]:
-        """
-        Collect all non-iteration State values currently assigned in the
-        network.
-
-        These values are used only to determine whether explicit state
-        propagation has converged.
-
-        Iteration variables are intentionally ignored because they are
-        controlled by the nonlinear solver, not by state-settling passes.
-        """
-
-        values = {}
-
-        iteration_ids = {
-            id(var)
-            for var in self.collect_all_iteration_variables()
-        }
-
-        def collect(attr_value):
-
-            # Composition container.
-            if hasattr(attr_value, "fraction"):
-                for _, state in attr_value:
-
-                    # Ignore solver variables.
-                    if id(state) in iteration_ids:
-                        continue
-
-                    if state.is_assigned:
-                        try:
-                            values[id(state)] = float(state.value)
-                        except Exception:
-                            pass
-                return
-
-            # Ordinary State.
-            if hasattr(attr_value, "is_assigned"):
-
-                # Ignore solver variables.
-                if id(attr_value) in iteration_ids:
-                    return
-
-                if attr_value.is_assigned:
-                    try:
-                        values[id(attr_value)] = float(attr_value.value)
-                    except Exception:
-                        pass
-
-        for comp in self.component_list:
-            for attr_value in comp.__dict__.values():
-                collect(attr_value)
-
-        for bal in self.balance_list:
-            for attr_value in bal.__dict__.values():
-                collect(attr_value)
-
-        return values
-    
-
-
-    def _max_state_change(
-        self,
-        old: dict[int, float],
-        new: dict[int, float],
-    ) -> float:
-        """
-        Compute the largest normalized change between two state snapshots.
-
-        Used to determine whether explicit state propagation has settled.
-
-        A value near zero means another evaluation pass would produce
-        essentially the same network state.
-        """
-
-        max_change = 0.0
-
-        for key, new_value in new.items():
-            old_value = old.get(key)
-
-            # Newly-created state.
-            if old_value is None:
-                max_change = max(max_change, abs(new_value))
-                continue
-
-            # Relative change with protection against division by small values.
-            scale = max(abs(new_value), 1.0)
-
-            max_change = max(
-                max_change,
-                abs(new_value - old_value) / scale,
-            )
-
-        return max_change
-
+    # ------------------------------------------------------------------
+    # Iteration variable collection and assignment
+    # ------------------------------------------------------------------
 
     def collect_iteration_variables(self) -> list[State]:
+        """Collect iteration variables owned by components."""
         iter_vars = []
+
         for comp in self.component_list:
             iter_vars.extend(comp.iteration_variables)
 
         return iter_vars
-    
+
     def collect_balance_iteration_variables(self) -> list[State]:
+        """Collect iteration variables owned by balances."""
         iter_vars = []
+
         for bal in self.balance_list:
             iter_vars.extend(bal.iteration_variables)
 
         return iter_vars
-    
-    def collect_all_iteration_variables(self) -> list[State]:
-        return (self.collect_iteration_variables() + self.collect_balance_iteration_variables())
 
+    def collect_all_iteration_variables(self) -> list[State]:
+        """Collect component iteration variables followed by balance variables."""
+        return (
+            self.collect_iteration_variables()
+            + self.collect_balance_iteration_variables()
+        )
 
     def assign_iteration_values(self, iteration_values: list[float]) -> None:
+        """
+        Assign solver vector values back into State objects.
+
+        The solver works with a numeric vector x. The network/components work
+        with State objects. This method maps x -> State.value.
+        """
         iter_var_list = self.collect_all_iteration_variables()
+
         if len(iteration_values) != len(iter_var_list):
             raise ValueError(
                 f"Length mismatch: got {len(iteration_values)} iteration values "
                 f"but expected {len(iter_var_list)}"
             )
+
         for val, var in zip(iteration_values, iter_var_list):
             var.value = val
 
-    
+    # ------------------------------------------------------------------
+    # Iteration variable validation
+    # ------------------------------------------------------------------
 
     def _validate_no_iteration_overlap(self) -> None:
+        """
+        Ensure balance variables do not duplicate component iteration variables.
+
+        A State cannot be solved by both a component equation and a Balance.
+        """
         comp_ids = {id(v) for v in self.collect_iteration_variables()}
         bal_ids = {id(v) for v in self.collect_balance_iteration_variables()}
         overlap_ids = comp_ids & bal_ids
 
         if overlap_ids:
             raise ValueError(self._format_iteration_overlap_error(overlap_ids))
-    
 
     def _format_iteration_overlap_error(self, overlap_ids: set[int]) -> str:
+        """Build a readable error message for duplicated iteration variables."""
         component_names = []
         balance_names = []
 
         for comp in self.component_list:
             comp_iter_ids = {id(v) for v in comp.iteration_variables}
             shared_ids = comp_iter_ids & overlap_ids
+
             if not shared_ids:
                 continue
 
@@ -364,10 +263,10 @@ class Network:
         for bal in self.balance_list:
             bal_iter_ids = {id(v) for v in bal.iteration_variables}
             shared_ids = bal_iter_ids & overlap_ids
+
             if not shared_ids:
                 continue
 
-            # show both the balance name and its variable attribute
             for attr_name, attr_value in bal.__dict__.items():
                 if id(attr_value) in shared_ids:
                     balance_names.append(f"{bal.name}:{attr_name}")
@@ -390,9 +289,12 @@ class Network:
 
         return "\n".join(lines)
 
-    # -------------- SOLUTION EXPORTING -------------- #
+    # ------------------------------------------------------------------
+    # Display
+    # ------------------------------------------------------------------
 
     def __str__(self) -> str:
+        """Return a simple text summary of the network."""
         lines = []
 
         lines.append(f"Network: {self.name}")
@@ -405,16 +307,34 @@ class Network:
 
         return "\n".join(lines)
 
+    # ------------------------------------------------------------------
+    # Solution exporting
+    # ------------------------------------------------------------------
 
     def save(
         self,
         filename: str | None = None,
         return_type: str = "dict",
     ):
+        """
+        Export component and balance state values.
+
+        Supports:
+            return_type="dict"
+            return_type="dataframe"
+
+        File output supports:
+            .csv
+            .json
+            .xlsx / .xls
+        """
         return_type = return_type.lower()
 
-        # ---------- build base data ----------
         records = []
+
+        # --------------------------------------------------------------
+        # Export component attributes.
+        # --------------------------------------------------------------
         for comp in self.component_list:
             ignored_attributes = {"name", "network"} | comp.ignored_export_attributes
 
@@ -422,6 +342,7 @@ class Network:
                 if attr_name in ignored_attributes or attr_name.startswith("_"):
                     continue
 
+                # Composition-like attribute.
                 if hasattr(attr_value, "fraction"):
                     if attr_value.is_assigned:
                         for species, state in attr_value:
@@ -446,6 +367,7 @@ class Network:
 
                     continue
 
+                # State-like attribute.
                 if hasattr(attr_value, "is_assigned"):
                     if attr_value.is_assigned:
                         try:
@@ -454,6 +376,8 @@ class Network:
                             value = "<unavailable>"
                     else:
                         value = "<uninitialized>"
+
+                # Plain Python attribute.
                 else:
                     value = attr_value
 
@@ -464,7 +388,9 @@ class Network:
                     "value": value,
                 })
 
-        # ---------- balances ----------
+        # --------------------------------------------------------------
+        # Export balance attributes.
+        # --------------------------------------------------------------
         for bal in self.balance_list:
             ignored_attributes = {"name", "network"}
 
@@ -472,6 +398,7 @@ class Network:
                 if attr_name in ignored_attributes or attr_name.startswith("_"):
                     continue
 
+                # Composition-like attribute.
                 if hasattr(attr_value, "fraction"):
                     if attr_value.is_assigned:
                         for species, state in attr_value:
@@ -491,6 +418,7 @@ class Network:
 
                     continue
 
+                # State-like attribute.
                 if hasattr(attr_value, "is_assigned"):
                     if attr_value.is_assigned:
                         try:
@@ -499,6 +427,8 @@ class Network:
                             value = "<unavailable>"
                     else:
                         value = "<uninitialized>"
+
+                # Plain Python attribute.
                 else:
                     value = attr_value
 
@@ -509,7 +439,9 @@ class Network:
                     "value": value,
                 })
 
-        # ---------- return object ----------
+        # --------------------------------------------------------------
+        # Return object.
+        # --------------------------------------------------------------
         if return_type == "dict":
             result = records
 
@@ -520,11 +452,12 @@ class Network:
         else:
             raise ValueError("return_type must be 'dict' or 'dataframe'")
 
-        # ---------- file export ----------
+        # --------------------------------------------------------------
+        # Optional file export.
+        # --------------------------------------------------------------
         if filename is not None:
             ext = filename.split(".")[-1].lower()
 
-            # ensure we have dataframe for file writing
             import pandas as pd
             df = pd.DataFrame(records)
 
