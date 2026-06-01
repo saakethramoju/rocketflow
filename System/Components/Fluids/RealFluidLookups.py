@@ -379,12 +379,34 @@ class FluidLookup(Component):
                 f"Got {total}."
             )
 
+        new_coolprop_fluid = self._fluid_argument_from_composition()
+
+        # Species set changed, so rebuild the CoolProp backend.
+        if new_coolprop_fluid != self._coolprop_fluid:
+            self._coolprop_fluid = new_coolprop_fluid
+
+            self._Fluid = Fluid(
+                self._coolprop_fluid,
+                basis="mass",
+                **{
+                    name: getattr(self, name).value
+                    for name in self._initial_ordered_names
+                },
+            )
+
+            self._last_composition_values = composition_values
+            self._last_flash_values = None
+            self._property_cache.clear()
+            return
+
+        # Same species set, only fractions changed.
         if len(composition_values) > 1:
             self._Fluid.mass_fractions = list(composition_values)
 
         self._last_composition_values = composition_values
         self._last_flash_values = None
         self._property_cache.clear()
+
 
     def _composition_values_unchanged(
         self,

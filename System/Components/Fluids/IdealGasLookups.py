@@ -562,6 +562,7 @@ class IdealGasLookup(Component):
             )
         )
 
+
     def _set_ideal_gas_from_composition(self) -> None:
 
         composition_values = self._composition_values()
@@ -577,12 +578,25 @@ class IdealGasLookup(Component):
                 f"Got {total}."
             )
 
+        new_coolprop_fluid = self._coolprop_argument_from_composition()
+        new_pyromat_fluid = self._pyromat_argument_from_composition()
+
+        # Species set changed, so rebuild the ideal-gas and reference backends.
+        if (
+            new_coolprop_fluid != self._coolprop_fluid
+            or new_pyromat_fluid != self._pyromat_fluid
+        ):
+            self._initialize_backend()
+
+            self._last_composition_values = composition_values
+            self._last_flash_values = None
+            self._property_cache.clear()
+            return
+
+        # Same species set, only fractions changed.
         if len(composition_values) > 1:
             self._IdealGas.mass_fractions = list(composition_values)
             self._reference_IdealGas.mass_fractions = list(composition_values)
-
-            self._coolprop_fluid = self._coolprop_argument_from_composition()
-            self._pyromat_fluid = self._pyromat_argument_from_composition()
 
             reference_fluid = Fluid(
                 self._coolprop_fluid,
