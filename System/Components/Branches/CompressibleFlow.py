@@ -31,9 +31,6 @@ class IsentropicCompressibleOrifice(Component):
         
         self.setup()
 
-        if not self.total_enthalpy.is_assigned:
-            self.total_enthalpy = State()
-    
 
     def evaluate_states(self):
 
@@ -131,9 +128,6 @@ class IsentropicAreaChange(Component):
         self._use_downstream_area = downstream_area is not None
 
         self.setup()
-
-        if not self.total_enthalpy.is_assigned:
-            self.total_enthalpy = State()
 
         temp = self.exit_mach_regime
         self.exit_mach_regime = self.exit_mach_regime.lower()
@@ -341,9 +335,6 @@ class CompressibleFlowTube(Component):
     ):
         self.setup()
 
-        if not self.total_enthalpy.is_assigned:
-            self.total_enthalpy = State()
-
     def evaluate_states(self):
         mdot = self.mass_flow.value
         p1 = self.upstream_static_pressure.value
@@ -465,9 +456,6 @@ class ChokedFannoFlow(Component):
     ):
         self._use_given_mach = upstream_mach_number is not None
         self.setup()
-
-        if not self.total_enthalpy.is_assigned:
-            self.total_enthalpy = State()
 
         temp = self.regime
         self.regime = self.regime.lower()
@@ -661,12 +649,6 @@ class ChokedRayleighFlow(Component):
     ):
         self._use_given_mach = upstream_mach_number is not None
         self.setup()
-
-        if not self.total_enthalpy_in.is_assigned:
-            self.total_enthalpy_in = State()
-
-        if not self.total_enthalpy_out.is_assigned:
-            self.total_enthalpy_out = State()
 
         original_regime = self.regime
         self.regime = self.regime.lower()

@@ -35,13 +35,13 @@ SourceFluid2 = IdealGasLookup(
     temperature=300,
 )
 
-
+mixer_pressure = State(1.5e5, bounds=(0, None), keep_feasible=True)
 
 MixerFluid = FluidLookup(
     "Source Fluid 2",
     MixtureNetwork,
     Composition("o2"), # fix so this can be empty
-    pressure=1.5e5,
+    pressure=mixer_pressure,
     temperature=290,
     flash_values=("pressure", "enthalpy")
 )
@@ -83,7 +83,7 @@ Inlet2 = DischargeCoefficient(
     cross_sectional_area=A,
 )
 
-Mixer = FlowMixerOld(
+Mixer = FlowMixer(
     "Mixer",
     MixtureNetwork,
     pressure=MixerFluid.pressure,

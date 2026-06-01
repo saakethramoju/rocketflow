@@ -64,6 +64,9 @@ class IsentropicGasRegulator(Component):
         R = self.specific_gas_constant.value
         g = self.specific_heat_ratio.value
 
+        cp = g * R / (g - 1.0)
+        self.total_enthalpy.value = cp * T1
+
         if np.isclose(P1, P2):
             self.mass_flow.value = 0.0
             return
@@ -84,6 +87,3 @@ class IsentropicGasRegulator(Component):
             flow_function = np.sqrt((2 * g / (R * To * (g - 1))) * (pressure_ratio ** (2 / g) - pressure_ratio ** ((g + 1) / g)))
 
         self.mass_flow.value = sign * CdA * Po * flow_function
-
-        cp = g * R / (g - 1.0)
-        self.total_enthalpy.value = cp * To

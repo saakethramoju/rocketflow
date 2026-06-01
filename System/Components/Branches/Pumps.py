@@ -72,8 +72,7 @@ class ConstantDensityPump(Component):
 
             self._predicted_discharge_total_enthalpy = ho_out
 
-            if self.discharge_total_enthalpy.is_assigned:
-                self.discharge_total_enthalpy.value = ho_out
+            self.discharge_total_enthalpy.value = ho_out
         else:
             self._predicted_discharge_total_enthalpy = None
 
