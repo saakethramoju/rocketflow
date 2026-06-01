@@ -120,9 +120,192 @@ class Network:
         for c in self.component_list:
             c.pre_evaluation()
 
-    def evaluate_states(self) -> None:
-        for c in self.component_list:
-            c.evaluate_states()
+
+    def evaluate_states(
+        self,
+        max_passes: int = 20,
+        tolerance: float = 1e-10,
+    ) -> None:
+        """
+        Evaluate all component states until explicit state updates stop changing.
+
+        This removes dependence on component ordering. For example:
+
+            composition -> density -> mass_flow
+
+        may require several passes to propagate through the network.
+
+        Iteration variables are frozen during settling so components cannot
+        accidentally overwrite solver-owned states (pressure, enthalpy,
+        balance variables, etc.).
+
+        Examples
+        --------
+        FluidLookup -> Darcy -> Volume
+
+        or
+
+        Composition -> FluidLookup -> FlowSplitter -> Darcy
+
+        may require multiple passes before all derived states are consistent.
+
+        """
+
+        # Save current solver variables.
+        iteration_snapshot = self._snapshot_iteration_variables()
+
+        for _ in range(max_passes):
+
+            # Record all non-iteration state values before this pass.
+            old_values = self._collect_state_values()
+
+            for c in self.component_list:
+
+                # Protect solver-owned variables.
+                self._restore_iteration_variables(iteration_snapshot)
+
+                c.evaluate_states()
+
+                # Protect solver-owned variables again in case a component
+                # modified them.
+                self._restore_iteration_variables(iteration_snapshot)
+
+            # Record all non-iteration state values after this pass.
+            new_values = self._collect_state_values()
+
+            # Stop once explicit state updates have settled.
+            if self._max_state_change(old_values, new_values) < tolerance:
+                return
+                    
+    def _snapshot_iteration_variables(self) -> dict[int, float]:
+        """
+        Store the current values of all iteration variables.
+
+        These values belong to the nonlinear solver and should not be
+        modified by evaluate_states() during settling.
+        """
+
+        snapshot = {}
+
+        for var in self.collect_all_iteration_variables():
+            if var.is_assigned:
+                snapshot[id(var)] = float(var.value)
+
+        return snapshot
+
+
+    def _restore_iteration_variables(
+        self,
+        snapshot: dict[int, float],
+    ) -> None:
+        """
+        Restore solver-owned iteration variables to their original values.
+
+        This prevents component evaluation from overwriting the solver's
+        current iterate.
+        """
+
+        for var in self.collect_all_iteration_variables():
+            key = id(var)
+
+            if key in snapshot:
+                var.value = snapshot[key]
+            
+
+    def _collect_state_values(self) -> dict[int, float]:
+        """
+        Collect all non-iteration State values currently assigned in the
+        network.
+
+        These values are used only to determine whether explicit state
+        propagation has converged.
+
+        Iteration variables are intentionally ignored because they are
+        controlled by the nonlinear solver, not by state-settling passes.
+        """
+
+        values = {}
+
+        iteration_ids = {
+            id(var)
+            for var in self.collect_all_iteration_variables()
+        }
+
+        def collect(attr_value):
+
+            # Composition container.
+            if hasattr(attr_value, "fraction"):
+                for _, state in attr_value:
+
+                    # Ignore solver variables.
+                    if id(state) in iteration_ids:
+                        continue
+
+                    if state.is_assigned:
+                        try:
+                            values[id(state)] = float(state.value)
+                        except Exception:
+                            pass
+                return
+
+            # Ordinary State.
+            if hasattr(attr_value, "is_assigned"):
+
+                # Ignore solver variables.
+                if id(attr_value) in iteration_ids:
+                    return
+
+                if attr_value.is_assigned:
+                    try:
+                        values[id(attr_value)] = float(attr_value.value)
+                    except Exception:
+                        pass
+
+        for comp in self.component_list:
+            for attr_value in comp.__dict__.values():
+                collect(attr_value)
+
+        for bal in self.balance_list:
+            for attr_value in bal.__dict__.values():
+                collect(attr_value)
+
+        return values
+    
+
+
+    def _max_state_change(
+        self,
+        old: dict[int, float],
+        new: dict[int, float],
+    ) -> float:
+        """
+        Compute the largest normalized change between two state snapshots.
+
+        Used to determine whether explicit state propagation has settled.
+
+        A value near zero means another evaluation pass would produce
+        essentially the same network state.
+        """
+
+        max_change = 0.0
+
+        for key, new_value in new.items():
+            old_value = old.get(key)
+
+            # Newly-created state.
+            if old_value is None:
+                max_change = max(max_change, abs(new_value))
+                continue
+
+            # Relative change with protection against division by small values.
+            scale = max(abs(new_value), 1.0)
+
+            max_change = max(
+                max_change,
+                abs(new_value - old_value) / scale,
+            )
+
+        return max_change
 
 
     def collect_iteration_variables(self) -> list[State]:
