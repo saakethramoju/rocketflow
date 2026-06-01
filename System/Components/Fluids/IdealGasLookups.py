@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from System import Network
 
 
+FluidInput = str | dict[str, State | float] | Composition
+
+
 class IdealGasLookup(Component):
     """
     PYroMat-backed ideal-gas property lookup component.
@@ -55,7 +58,7 @@ class IdealGasLookup(Component):
         self,
         name: str,
         network: Network,
-        fluid: str | dict[str, State | float] | Composition,
+        fluid: FluidInput,
         pressure: State | float | None = None,
         temperature: State | float | None = None,
         enthalpy: State | float | None = None,
@@ -176,8 +179,7 @@ class IdealGasLookup(Component):
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
-        # If composition is valid now, initialize immediately.
-        # This preserves old behavior for normal usage.
+        # Initialize now if possible; otherwise defer until composition is valid.
         if self.composition.is_assigned and self._composition_is_valid():
             self._initialize_backend()
 
@@ -482,15 +484,19 @@ class IdealGasLookup(Component):
             property,
         )
 
-    def _initialize_composition(
-        self,
-        fluid: str | dict[str, State | float] | Composition,
-    ) -> Composition:
+    def _initialize_composition(self, fluid: FluidInput) -> Composition:
 
         if isinstance(fluid, Composition):
             return fluid
 
-        composition = Composition(fluid)
+        try:
+            composition = Composition(fluid)
+        except Exception as e:
+            raise ValueError(
+                f"{self.name}: invalid fluid input {fluid!r}. "
+                "Expected a fluid name, a species-fraction dictionary, "
+                "or a Composition object."
+            ) from e
 
         if not composition.is_assigned:
             raise ValueError(
