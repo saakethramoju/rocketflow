@@ -14,19 +14,6 @@ if TYPE_CHECKING:
 class IdealGasLookup(Component):
     """
     PYroMat-backed ideal-gas property lookup component.
-
-    IdealGasLookup owns a persistent IdealGas object and updates it from either a
-    single ideal-gas property, such as temperature or enthalpy, or a two-property
-    flash pair, such as pressure-temperature or pressure-enthalpy. The flash inputs
-    are State objects and may be solver iteration variables or shared states.
-
-    The component uses CoolProp only once during initialization to align enthalpy
-    and internal-energy reference values with the real-fluid Fluid wrapper. Runtime
-    property evaluation is handled by the PYroMat-backed IdealGas object.
-
-    To reduce repeated PYroMat work, the lookup skips unchanged flashes and caches
-    property values after each flash. Cached properties are reused until the flash
-    inputs change, at which point the cache is cleared and rebuilt lazily.
     """
 
     _REFERENCE_TEMPERATURE = 298.15
@@ -96,36 +83,17 @@ class IdealGasLookup(Component):
 
         initial_fluid = self.fluid
         self.composition = self._initialize_composition(initial_fluid)
-
-        if not self.composition.is_assigned:
-            raise ValueError(
-                f"{self.name}: composition must contain at least one species."
-            )
-
         self.fluid = self.composition
+
         self._last_composition_values: tuple[float, ...] | None = None
 
-        self._validate_composition_support()
+        self._coolprop_fluid = None
+        self._pyromat_fluid = None
 
-        self._coolprop_fluid = self._coolprop_argument_from_composition()
-        self._pyromat_fluid = self._pyromat_argument_from_composition()
-
-        reference_fluid = Fluid(
-            self._coolprop_fluid,
-            basis="mass",
-            pressure=self._REFERENCE_PRESSURE,
-            temperature=self._REFERENCE_TEMPERATURE,
-        )
-
-        self._reference_enthalpy = reference_fluid.enthalpy
-        self._reference_internal_energy = reference_fluid.internal_energy
-
-        self._reference_IdealGas = IdealGas(
-            self._pyromat_fluid,
-            basis="mass",
-            pressure=self._REFERENCE_PRESSURE,
-            temperature=self._REFERENCE_TEMPERATURE,
-        )
+        self._reference_enthalpy = None
+        self._reference_internal_energy = None
+        self._reference_IdealGas = None
+        self._IdealGas = None
 
         provided_names = [
             prop_name
@@ -200,18 +168,7 @@ class IdealGasLookup(Component):
             initial_flash_names = provided_names[:2]
 
         self._validate_initial_flash_names(initial_flash_names)
-
-        self._IdealGas = IdealGas(
-            self._pyromat_fluid,
-            basis="mass",
-            **{
-                flash_name: self._to_ideal_basis(
-                    flash_name,
-                    getattr(self, flash_name).value,
-                )
-                for flash_name in initial_flash_names
-            },
-        )
+        self._initial_flash_names = initial_flash_names
 
         self._last_flash_values: tuple[float, ...] | None = None
         self._property_cache: dict[str, float] = {}
@@ -219,20 +176,22 @@ class IdealGasLookup(Component):
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
-        # ---------- flash properties are owned assignable States ----------
-        for flash_name in self._flash_names:
-            initial_value = self._get_property(flash_name)
+        # If composition is valid now, initialize immediately.
+        # This preserves old behavior for normal usage.
+        if self.composition.is_assigned and self._composition_is_valid():
+            self._initialize_backend()
 
+        # Flash properties are owned assignable States.
+        for flash_name in self._flash_names:
             state = getattr(self, flash_name, None)
 
             if hasattr(state, "is_assigned"):
-                if not state.is_assigned:
-                    state.value = initial_value
+                if self._IdealGas is not None and not state.is_assigned:
+                    state.value = self._get_property(flash_name)
             else:
-                setattr(self, flash_name, State(initial_value))
+                setattr(self, flash_name, State(state))
 
-        # ---------- delete unprovided non-flash placeholders ----------
-        # This lets __getattr__ dynamically create derived property States.
+        # Delete unprovided non-flash placeholders.
         for prop_name in self._THERMO_NAMES:
             if prop_name in self._flash_names:
                 continue
@@ -240,7 +199,7 @@ class IdealGasLookup(Component):
             if _input_map[prop_name] is None and prop_name in self.__dict__:
                 delattr(self, prop_name)
 
-        # ---------- provided non-flash thermo states become output States ----------
+        # Provided non-flash thermo states become output States.
         for prop_name in self._THERMO_NAMES:
             if prop_name in self._flash_names:
                 continue
@@ -277,6 +236,9 @@ class IdealGasLookup(Component):
         self.evaluate_states()
 
     def evaluate_states(self) -> None:
+        if not self._ensure_backend_initialized():
+            return
+
         self._set_ideal_gas_from_composition()
         self._set_ideal_gas_from_flash()
 
@@ -293,17 +255,74 @@ class IdealGasLookup(Component):
                 f"{self.__class__.__name__!s} has no attribute {name!r}"
             )
 
-        if self._requires_pressure(name) and self._IdealGas.pressure is None:
-            raise AttributeError(
-                f"{name!r} requires pressure, but pressure is not available."
-            )
-
         if name not in self._property_states:
             self._property_states[name] = State._derived(
                 lambda prop=name: self._get_property(prop)
             )
 
         return self._property_states[name]
+
+    def _initialize_backend(self) -> None:
+        self._validate_composition_support()
+
+        self._coolprop_fluid = self._coolprop_argument_from_composition()
+        self._pyromat_fluid = self._pyromat_argument_from_composition()
+
+        reference_fluid = Fluid(
+            self._coolprop_fluid,
+            basis="mass",
+            pressure=self._REFERENCE_PRESSURE,
+            temperature=self._REFERENCE_TEMPERATURE,
+        )
+
+        self._reference_enthalpy = reference_fluid.enthalpy
+        self._reference_internal_energy = reference_fluid.internal_energy
+
+        self._reference_IdealGas = IdealGas(
+            self._pyromat_fluid,
+            basis="mass",
+            pressure=self._REFERENCE_PRESSURE,
+            temperature=self._REFERENCE_TEMPERATURE,
+        )
+
+        self._IdealGas = IdealGas(
+            self._pyromat_fluid,
+            basis="mass",
+            **{
+                flash_name: self._to_ideal_basis(
+                    flash_name,
+                    getattr(self, flash_name).value,
+                )
+                for flash_name in self._initial_flash_names
+            },
+        )
+
+        self._last_flash_values = None
+        self._property_cache.clear()
+
+    def _ensure_backend_initialized(self) -> bool:
+        if self._IdealGas is not None:
+            return True
+
+        if not self.composition.is_assigned:
+            return False
+
+        if not self._composition_is_valid():
+            return False
+
+        self._initialize_backend()
+        return True
+
+    def _composition_is_valid(self) -> bool:
+        if not self.composition.is_assigned:
+            return False
+
+        values = tuple(
+            self.composition[species].value
+            for species in self.composition.species
+        )
+
+        return np.isclose(sum(values), 1.0, rtol=0.0, atol=1e-6)
 
     def _validate_initial_flash_names(self, flash_names: list[str]) -> None:
         if len(flash_names) == 1:
@@ -437,6 +456,12 @@ class IdealGasLookup(Component):
         return float(value)
 
     def _get_property(self, name: str):
+        if not self._ensure_backend_initialized():
+            raise ValueError(
+                f"{self.name}: cannot evaluate {name!r} because the "
+                "ideal-gas composition is not initialized yet."
+            )
+
         if self._requires_pressure(name) and self._IdealGas.pressure is None:
             raise ValueError(
                 f"{name!r} requires pressure, but pressure is not available."
@@ -463,13 +488,6 @@ class IdealGasLookup(Component):
     ) -> Composition:
 
         if isinstance(fluid, Composition):
-            if not fluid.is_assigned:
-                raise ValueError(
-                    f"{self.name}: a Composition object was provided but "
-                    f"contains no species. Provide a valid composition or "
-                    f"use a fluid name/dictionary."
-                )
-
             return fluid
 
         composition = Composition(fluid)
@@ -481,7 +499,6 @@ class IdealGasLookup(Component):
 
         return composition
 
-
     def _validate_composition_support(self) -> None:
 
         for species in self.composition.species:
@@ -492,7 +509,6 @@ class IdealGasLookup(Component):
                     f"energy and PYroMat ideal-gas properties."
                 )
 
-
     def _coolprop_argument_from_composition(self) -> str | dict[str, float]:
 
         values = self.composition.values
@@ -502,7 +518,6 @@ class IdealGasLookup(Component):
             return FluidRegistry.coolprop_name(species)
 
         return FluidRegistry.coolprop_mixture_dict(values)
-
 
     def _pyromat_argument_from_composition(self) -> str | dict[str, float]:
 
@@ -517,15 +532,11 @@ class IdealGasLookup(Component):
             include_prefix=True,
         )
 
-
     def _composition_values(self) -> tuple[float, ...]:
-        self.composition.update()
-
         return tuple(
             self.composition[species].value
             for species in self.composition.species
         )
-
 
     def _composition_values_unchanged(
         self,
@@ -564,6 +575,9 @@ class IdealGasLookup(Component):
             self._IdealGas.mass_fractions = list(composition_values)
             self._reference_IdealGas.mass_fractions = list(composition_values)
 
+            self._coolprop_fluid = self._coolprop_argument_from_composition()
+            self._pyromat_fluid = self._pyromat_argument_from_composition()
+
             reference_fluid = Fluid(
                 self._coolprop_fluid,
                 basis="mass",
@@ -577,7 +591,6 @@ class IdealGasLookup(Component):
         self._last_composition_values = composition_values
         self._last_flash_values = None
         self._property_cache.clear()
-
 
     @property
     def ignored_export_attributes(self) -> set[str]:
@@ -609,4 +622,6 @@ class IdealGasLookup(Component):
             "composition",
             "last_composition_values",
             "_last_composition_values",
+            "initial_flash_names",
+            "_initial_flash_names",
         }

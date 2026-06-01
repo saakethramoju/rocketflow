@@ -72,15 +72,10 @@ class FluidLookup(Component):
 
         initial_fluid = self.fluid
         self.composition = self._initialize_composition(initial_fluid)
-
-        if not self.composition.is_assigned:
-            raise ValueError(
-                f"{self.name}: composition must contain at least one species."
-            )
-
         self.fluid = self.composition
 
-        self._coolprop_fluid = self._fluid_argument_from_composition()
+        self._coolprop_fluid = None
+        self._Fluid = None
         self._last_composition_values: tuple[float, ...] | None = None
 
         provided_names = [
@@ -134,18 +129,8 @@ class FluidLookup(Component):
                 f"Supported pairs are: {Fluid.available_flash_pairs()}."
             )
 
-        initial_setter_name, initial_ordered_names = self._FLASH_PAIR_SETTERS[
-            initial_flash_key
-        ]
-
-        self._Fluid = Fluid(
-            self._coolprop_fluid,
-            basis="mass",
-            **{
-                name: getattr(self, name).value
-                for name in initial_ordered_names
-            },
-        )
+        _, initial_ordered_names = self._FLASH_PAIR_SETTERS[initial_flash_key]
+        self._initial_ordered_names = initial_ordered_names
 
         self._last_flash_values: tuple[float, ...] | None = None
         self._property_cache: dict[str, float] = {}
@@ -153,17 +138,22 @@ class FluidLookup(Component):
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
-        for flash_name in self._flash_names:
-            initial_value = self._get_cached_property(flash_name)
+        # If composition is ready now, initialize immediately.
+        # This preserves old behavior for normal FluidLookup usage.
+        if self.composition.is_assigned and self._composition_is_valid():
+            self._initialize_backend()
 
+        # Flash states should be assignable States.
+        for flash_name in self._flash_names:
             state = getattr(self, flash_name, None)
 
             if hasattr(state, "is_assigned"):
-                if not state.is_assigned:
-                    state.value = initial_value
+                if self._Fluid is not None and not state.is_assigned:
+                    state.value = self._get_cached_property(flash_name)
             else:
-                setattr(self, flash_name, State(initial_value))
+                setattr(self, flash_name, State(state))
 
+        # Remove unused placeholder thermo states.
         for prop_name in self._THERMO_NAMES:
             if prop_name in self._flash_names:
                 continue
@@ -171,6 +161,7 @@ class FluidLookup(Component):
             if _input_map[prop_name] is None and prop_name in self.__dict__:
                 delattr(self, prop_name)
 
+        # Provided non-flash thermo states become output states.
         for prop_name in self._THERMO_NAMES:
             if prop_name in self._flash_names:
                 continue
@@ -207,6 +198,9 @@ class FluidLookup(Component):
         self.evaluate_states()
 
     def evaluate_states(self) -> None:
+        if not self._ensure_backend_initialized():
+            return
+
         self._set_fluid_from_composition()
         self._set_fluid_from_flash()
 
@@ -231,6 +225,45 @@ class FluidLookup(Component):
             )
 
         return self._property_states[name]
+
+    def _initialize_backend(self) -> None:
+        self._coolprop_fluid = self._fluid_argument_from_composition()
+
+        self._Fluid = Fluid(
+            self._coolprop_fluid,
+            basis="mass",
+            **{
+                name: getattr(self, name).value
+                for name in self._initial_ordered_names
+            },
+        )
+
+        self._last_flash_values = None
+        self._property_cache.clear()
+
+    def _ensure_backend_initialized(self) -> bool:
+        if self._Fluid is not None:
+            return True
+
+        if not self.composition.is_assigned:
+            return False
+
+        if not self._composition_is_valid():
+            return False
+
+        self._initialize_backend()
+        return True
+
+    def _composition_is_valid(self) -> bool:
+        if not self.composition.is_assigned:
+            return False
+
+        values = tuple(
+            self.composition[species].value
+            for species in self.composition.species
+        )
+
+        return np.isclose(sum(values), 1.0, rtol=0.0, atol=1e-6)
 
     def _set_fluid_from_flash(self) -> None:
 
@@ -275,6 +308,12 @@ class FluidLookup(Component):
 
     def _get_cached_property(self, name: str):
 
+        if not self._ensure_backend_initialized():
+            raise ValueError(
+                f"{self.name}: cannot evaluate {name!r} because the "
+                "fluid composition is not initialized yet."
+            )
+
         if name not in self._property_cache:
             self._property_cache[name] = getattr(self._Fluid, name)
 
@@ -292,16 +331,6 @@ class FluidLookup(Component):
     ) -> Composition:
 
         if isinstance(fluid, Composition):
-            if not fluid.is_assigned:
-                raise ValueError(
-                    f"{self.name}: a Composition object was provided but "
-                    f"contains no species. Provide a valid composition or "
-                    f"use a fluid name/dictionary. An initial guess/"
-                    f"initialization Composition may be necessary for "
-                    f"certain components for which the lookup is being used."
-                )
-                
-
             return fluid
 
         composition = Composition(fluid)
@@ -312,7 +341,6 @@ class FluidLookup(Component):
             )
 
         return composition
-
 
     def _fluid_argument_from_composition(self) -> str | dict[str, float]:
 
@@ -325,8 +353,6 @@ class FluidLookup(Component):
         return FluidRegistry.coolprop_mixture_dict(values)
 
     def _composition_values(self) -> tuple[float, ...]:
-        self.composition.update()
-
         return tuple(
             self.composition[species].value
             for species in self.composition.species
@@ -394,4 +420,6 @@ class FluidLookup(Component):
             "composition",
             "last_composition_values",
             "_last_composition_values",
+            "initial_ordered_names",
+            "_initial_ordered_names",
         }
