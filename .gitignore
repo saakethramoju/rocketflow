@@ -89,3 +89,5 @@ System/Components/Nodes/__pycache__/Junctions.cpython-313.pyc
 Utilities/__pycache__/FluidRegistry.cpython-313.pyc
 System/Components/Fluids/__pycache__/FluidUtilities.cpython-313.pyc
 System/__pycache__/SystemExceptions.cpython-313.pyc
+Exceptions/__pycache__/__init__.cpython-313.pyc
+Exceptions/__pycache__/FluidExceptions.cpython-313.pyc

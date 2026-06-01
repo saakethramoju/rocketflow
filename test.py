@@ -41,7 +41,7 @@ MixerFluid = FluidLookup(
     MixtureNetwork,
     Composition("o2"), # fix so this can be empty
     pressure=1.5e5,
-    temperature=300,
+    temperature=290,
     flash_values=("pressure", "enthalpy")
 )
 
@@ -111,8 +111,6 @@ solution = SteadyState(MixtureNetwork).solve(
     static=False,
     print_solution=True,
 )
-
-
 
 
 '''
