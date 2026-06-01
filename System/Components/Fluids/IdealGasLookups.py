@@ -7,6 +7,8 @@ import numpy as np
 from System import Component, State, Composition
 from Utilities import Fluid, IdealGas, FluidRegistry
 
+from ...SystemExceptions import InvalidThermoStateError
+
 if TYPE_CHECKING:
     from System import Network
 
@@ -237,15 +239,38 @@ class IdealGasLookup(Component):
     def pre_evaluation(self):
         self.evaluate_states()
 
+
     def evaluate_states(self) -> None:
         if not self._ensure_backend_initialized():
             return
 
         self._set_ideal_gas_from_composition()
-        self._set_ideal_gas_from_flash()
+
+        try:
+            self._set_ideal_gas_from_flash()
+
+        except Exception as e:
+            flash_state = {
+                name: getattr(self, name).value
+                for name in self._flash_names
+            }
+
+            composition = {
+                species: state.value
+                for species, state in self.composition
+            }
+
+            raise InvalidThermoStateError(
+                f"{self.name}: invalid ideal-gas state.\n"
+                f"Flash variables: {flash_state}\n"
+                f"Composition: {composition}"
+            ) from e
 
         for prop_name in self._external_property_names:
-            self._property_states[prop_name].value = self._get_property(prop_name)
+            self._property_states[prop_name].value = self._get_property(
+                prop_name
+            )
+
 
     def __getattr__(self, name: str) -> State:
 

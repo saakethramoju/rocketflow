@@ -86,7 +86,7 @@ Mixer = FlowMixer(
     composition=MixerFluid.composition,
     total_enthalpy_in1=SourceFluid1.enthalpy,
     total_enthalpy_in2=SourceFluid2.enthalpy,
-    #enthalpy=MixerFluid.enthalpy
+    enthalpy=MixerFluid.enthalpy
 )
 
 
