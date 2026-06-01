@@ -3,6 +3,119 @@ from Solvers import *
 
 from constants import *
 
+MixtureNetwork = Network("Mixture Flow")
+
+# ------------------------------------------------------------------
+# Geometry
+# ------------------------------------------------------------------
+
+D = 3 * IN_TO_M
+A = (np.pi / 4) * D**2
+
+# ------------------------------------------------------------------
+# Fluid lookups
+# ------------------------------------------------------------------
+
+
+SourceFluid1 = FluidLookup(
+    "Source Fluid 1",
+    MixtureNetwork,
+    {"gn2": 1.0},
+    pressure=5e5,
+    temperature=300,
+)
+
+
+SourceFluid2 = IdealGasLookup(
+    "Source Fluid 2",
+    MixtureNetwork,
+    {"o2": 1.0},
+    pressure=5e5,
+    temperature=300,
+)
+
+
+
+MixerFluid = FluidLookup(
+    "Source Fluid 2",
+    MixtureNetwork,
+    Composition("o2"), # fix so this can be empty
+    pressure=1.5e5,
+    temperature=300,
+    flash_values=("pressure", "enthalpy")
+)
+
+
+
+
+
+# ------------------------------------------------------------------
+# Components
+# ------------------------------------------------------------------
+
+Inlet1 = DischargeCoefficient(
+    "Inlet 1",
+    MixtureNetwork,
+    upstream_pressure=SourceFluid1.pressure,
+    downstream_pressure=MixerFluid.pressure,
+    density=SourceFluid1.density,
+    discharge_coefficient=1,
+    cross_sectional_area=A,
+)
+
+
+Inlet2 = DischargeCoefficient(
+    "Inlet 2",
+    MixtureNetwork,
+    upstream_pressure=SourceFluid2.pressure,
+    downstream_pressure=MixerFluid.pressure,
+    density=SourceFluid2.density,
+    discharge_coefficient=1,
+    cross_sectional_area=A,
+)
+
+Mixer = FlowMixer(
+    "Mixer",
+    MixtureNetwork,
+    pressure=MixerFluid.pressure,
+    volume=1,
+    mass_flow_in1=Inlet1.mass_flow,
+    mass_flow_in2=Inlet2.mass_flow,
+    composition_in1=SourceFluid1.composition,
+    composition_in2=SourceFluid2.composition,
+    composition=MixerFluid.composition,
+    total_enthalpy_in1=SourceFluid1.enthalpy,
+    total_enthalpy_in2=SourceFluid2.enthalpy,
+    #enthalpy=MixerFluid.enthalpy
+)
+
+
+Outlet = DischargeCoefficient(
+    "Outlet 1",
+    MixtureNetwork,
+    upstream_pressure=Mixer.pressure,
+    downstream_pressure=101325,
+    density=MixerFluid.density,
+    discharge_coefficient=1,
+    cross_sectional_area=A,
+    mass_flow=Mixer.mass_flow_out,
+)
+
+# ------------------------------------------------------------------
+# Solve
+# ------------------------------------------------------------------
+
+solution = SteadyState(MixtureNetwork).solve(
+    return_type="dataframe",
+    verbose=True,
+    static=False,
+    print_solution=True,
+)
+
+
+
+
+'''
 
 MixtureNetwork = Network("Mixture Flow")
 
@@ -38,6 +151,7 @@ VolumeFluid = FluidLookup(
     SourceFluid.composition,
     pressure=2e5,
     temperature=300,
+    flash_values=("pressure", "enthalpy")
 )
 
 SeparatorOutlet1Fluid = FluidLookup(
@@ -79,6 +193,10 @@ Separator = FlowSplitter(
     composition=VolumeFluid.composition,
     composition_out1=SeparatorOutlet1Composition,
     composition_out2=SeparatorOutlet2Composition,
+    total_enthalpy_in=SourceFluid.enthalpy,
+    enthalpy=VolumeFluid.enthalpy,
+    total_enthalpy_out1=SeparatorOutlet1Fluid.enthalpy,
+    total_enthalpy_out2=SeparatorOutlet2Fluid.enthalpy
 )
 
 Outlet1 = DischargeCoefficient(
@@ -121,3 +239,4 @@ solution = SteadyState(MixtureNetwork).solve(
     static=False,
     print_solution=True,
 )
+'''

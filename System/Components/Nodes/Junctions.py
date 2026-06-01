@@ -9,13 +9,143 @@ if TYPE_CHECKING:
 
 
 
+
+class FlowMixer(Component):
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        pressure: State,
+        volume: float,
+        enthalpy: State | None = None,
+        temperature: State | None = None,
+        density: State | None = None,
+        internal_energy: State | None = None,
+        heat_rate: State | float | None = None,
+        composition: Composition = Composition(),
+        composition_in1: Composition = Composition(),
+        composition_in2: Composition = Composition(),
+        total_enthalpy_in1: State | None = None,
+        total_enthalpy_in2: State | None = None,
+        total_enthalpy_out: State | None = None,
+        mass_flow_in1: State | None = None,
+        mass_flow_in2: State | None = None,
+        mass_flow_out: State | None = None,
+    ):
+        self.setup()
+
+        # Energy is solved only when inlet enthalpy and internal enthalpy exist.
+        self._solve_energy = (
+            self.total_enthalpy_in1.is_assigned
+            and self.enthalpy.is_assigned
+            and self.total_enthalpy_in2.is_assigned
+        )
+
+        # Default outlet enthalpies to internal enthalpy.
+        if self.enthalpy.is_assigned and not self.total_enthalpy_out.is_assigned:
+            self.total_enthalpy_out = self.enthalpy
+
+
+        self._solve_species = (
+            self.composition.is_assigned
+            and self.composition_in1.is_assigned
+            and self.composition_in2.is_assigned
+        )
+
+
+    def evaluate_states(self):
+        if not self._solve_species:
+            return
+        
+        extra_species = set(self.composition.species) - (set(self.composition_in1.species) 
+                                                         | set(self.composition_in2.species))
+
+        if extra_species:
+            raise ValueError(
+                f"{self.name}: composition contains species not in "
+                f"composition_in1 or composition_in2: {extra_species}"
+            )
+
+        self.composition.copy_from(self.composition_in1, copy_values=False)
+        self.composition.copy_from(self.composition_in2, copy_values=False)
+
+        if (
+            not self.mass_flow_in1.is_assigned
+            or not self.mass_flow_in2.is_assigned
+            or not self.mass_flow_out.is_assigned
+        ):
+            return
+
+        mdot1 = self.mass_flow_in1.value
+        mdot2 = self.mass_flow_in2.value
+
+        mdot_total = mdot1 + mdot2
+
+        if abs(mdot_total) < 1e-12:
+            return
+
+        for species in self.composition.species:
+            yi1 = (
+                self.composition_in1[species].value
+                if species in self.composition_in1.species
+                else 0.0
+            )
+
+            yi2 = (
+                self.composition_in2[species].value
+                if species in self.composition_in2.species
+                else 0.0
+            )
+
+            self.composition[species].value = (
+                mdot1 * yi1 + mdot2 * yi2
+            ) / mdot_total
+
+
+    @property
+    def iteration_variables(self) -> list[State]:
+        variables = [self.pressure]
+
+        if self._solve_energy:
+            variables.append(self.enthalpy)
+
+        return variables
+
+
+    @property
+    def residuals(self) -> list[float]:
+        residuals = [
+            self.mass_flow_in1.value
+            + self.mass_flow_in2.value
+            - self.mass_flow_out.value
+        ]
+
+        if self._solve_energy:
+            qdot = self.heat_rate.value if self.heat_rate.is_assigned else 0.0
+
+            residuals.append(
+                self.mass_flow_in1.value * self.total_enthalpy_in1.value
+                + self.mass_flow_in2.value * self.total_enthalpy_in2.value
+                - self.mass_flow_out.value * self.total_enthalpy_out.value
+                + qdot
+            )
+
+        return residuals
+
+
+
+
+
+
+
+
 class FlowSplitter(Component):
     """
     Notes
     -----
     1) Species conservation solves for the composition at 
        outlet 2 only.
-    2) If species conser
     """    
     def __init__(
         self,
