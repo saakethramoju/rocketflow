@@ -587,8 +587,8 @@ class SteadyState:
 
         summary.add_row("Solver method", method)
         summary.add_row("Jacobian method", jac)
-        summary.add_row("Function evaluations", str(sol.nfev))
         summary.add_row("Solve time",f"{elapsed_time:.3f} s")
+        summary.add_row("Function evaluations", str(sol.nfev))
 
         if hasattr(sol, "njev") and sol.njev is not None:
             summary.add_row("Jacobian evaluations", str(sol.njev))
