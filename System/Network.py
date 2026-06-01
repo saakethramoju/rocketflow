@@ -281,6 +281,51 @@ class Network:
                     "value": value,
                 })
 
+        # ---------- balances ----------
+        for bal in self.balance_list:
+            ignored_attributes = {"name", "network"}
+
+            for attr_name, attr_value in bal.__dict__.items():
+                if attr_name in ignored_attributes or attr_name.startswith("_"):
+                    continue
+
+                if hasattr(attr_value, "fraction"):
+                    if attr_value.is_assigned:
+                        for species, state in attr_value:
+                            records.append({
+                                "component_name": bal.name,
+                                "component_type": bal.__class__.__name__,
+                                "attribute": f"{attr_name}.{species}",
+                                "value": state.value,
+                            })
+                    else:
+                        records.append({
+                            "component_name": bal.name,
+                            "component_type": bal.__class__.__name__,
+                            "attribute": attr_name,
+                            "value": "<uninitialized>",
+                        })
+
+                    continue
+
+                if hasattr(attr_value, "is_assigned"):
+                    if attr_value.is_assigned:
+                        try:
+                            value = attr_value.value
+                        except Exception:
+                            value = "<unavailable>"
+                    else:
+                        value = "<uninitialized>"
+                else:
+                    value = attr_value
+
+                records.append({
+                    "component_name": bal.name,
+                    "component_type": bal.__class__.__name__,
+                    "attribute": attr_name,
+                    "value": value,
+                })
+
         # ---------- return object ----------
         if return_type == "dict":
             result = records

@@ -107,10 +107,19 @@ class FlowSplitter(Component):
                 copy_values=True,
             )
 
+        # Ordinary splitter: both outlets match internal composition.
         if not self._solve_species:
+            if self.composition.is_assigned:
+                self.composition_out1.copy_from(
+                    self.composition,
+                    copy_values=True,
+                )
+                self.composition_out2.copy_from(
+                    self.composition,
+                    copy_values=True,
+                )
             return
 
-        # Outlet mdots may be placeholder States before the solver assigns them.
         if (
             not self.mass_flow_out1.is_assigned
             or not self.mass_flow_out2.is_assigned
@@ -119,24 +128,24 @@ class FlowSplitter(Component):
 
         mdot1 = self.mass_flow_out1.value
         mdot2 = self.mass_flow_out2.value
-        mdot_total = mdot1 + mdot2
 
         if abs(mdot2) < 1e-12:
-            raise ValueError(
-                f"{self.name}: cannot compute composition_out2 because "
-                f"mass_flow_out2 is zero."
-            )
+            return
 
-        # Solve outlet 2 composition from species conservation.
-        for species, _ in self.composition:
+        # Use current outlet flow guesses, not possibly stale inlet flow.
+        mdot_total = mdot1 + mdot2
+
+        for species in self.composition.species:
+            x_internal = self.composition[species].value
+            x_out1 = self.composition_out1[species].value
+
             self.composition_out2[species].value = (
-                mdot_total * self.composition[species].value
-                - mdot1 * self.composition_out1[species].value
+                mdot_total * x_internal
+                - mdot1 * x_out1
             ) / mdot2
 
         self.composition_out2.validate()
-
-
+        
 
     @property
     def iteration_variables(self) -> list[State]:
