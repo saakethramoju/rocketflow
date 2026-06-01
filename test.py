@@ -10,10 +10,11 @@ MixtureNetwork = Network("Mixture Flow")
 # Fluid properties
 # ------------------------------------------------------------------
 
-SourceFluid = IdealGasLookup(
+SourceFluid = FluidLookup(
     "Source Fluid",
     MixtureNetwork,
-    {"gn2": 0.75, "O2": 0.25},
+    #{"gn2": 0.75, "O2": 0.24, "Ar": 0.01},
+    {"gn2": 0.9, "O2": 0.1},
     pressure=3e5,
     temperature=300,
 )
@@ -29,7 +30,8 @@ VolumeFluid = FluidLookup(
 SeparatorOutlet1Fluid = FluidLookup(
     "Separator Outlet 1 Fluid",
     MixtureNetwork,
-    Composition("N2"),
+    "N2",
+    #Composition("Ar"), # also doesn't work idk why, some operand error
     pressure=VolumeFluid.pressure,
     temperature=VolumeFluid.temperature,
 )
@@ -37,7 +39,8 @@ SeparatorOutlet1Fluid = FluidLookup(
 SeparatorOutlet2Fluid = FluidLookup(
     "Separator Outlet 2 Fluid",
     MixtureNetwork,
-    Composition(),
+    {"gn2": 1.0, "O2": 0},
+    #"o2", # Doesn't Work, figure out why, also 
     pressure=VolumeFluid.pressure,
     temperature=VolumeFluid.temperature,
 )
@@ -95,6 +98,36 @@ Outlet2 = DischargeCoefficient(
     cross_sectional_area=A,
     mass_flow=Separator.mass_flow_out2,
 )
+
+# DOESN'T WORK, FIGURE OUT WHY
+'''
+SeparatorBalance = Balance(
+    "Pure Separator",
+    MixtureNetwork,
+    variable=Outlet1.discharge_coefficient,
+    function=Separator.composition_out2["o2"] - 0.5
+)
+'''
+
+# DOESN'T WORK, FIGURE OUT WHY
+'''
+SeparatorBalance = Balance(
+    "Pure Separator",
+    MixtureNetwork,
+    variable=SourceFluid.composition["o2"],
+    function=Separator.composition_out2["o2"] - 1.0
+)
+'''
+
+# This seems to be the only one that works
+'''
+SeparatorBalance = Balance(
+    "Pure Separator",
+    MixtureNetwork,
+    variable=SourceFluid.composition["o2"],
+    function=Separator.composition_out2["o2"] - 0.5
+)
+'''
 
 # ------------------------------------------------------------------
 # Solve
