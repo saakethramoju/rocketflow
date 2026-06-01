@@ -14,31 +14,136 @@ if TYPE_CHECKING:
 
 
 class SteadyState:
+
     """
-    Steady-state nonlinear solver.
+    Steady-state nonlinear network solver.
 
-    Overall solving process
-    -----------------------
-    1. Run network.pre_evaluation()
-       Components can initialize internal helper states.
+    Overview
+    --------
+    This solver finds a set of iteration variables x that drives all network
+    residual equations to zero.
 
-    2. Collect the current iteration variables into a vector x0.
-       These are solver-owned States such as pressures, enthalpies,
-       friction factors, pump speeds, and Balance variables.
+    Unknowns may include:
 
-    3. For each solver residual call:
-          a. Assign the solver vector x into the network States.
-          b. Evaluate component states repeatedly until derived states settle.
-          c. Restore iteration variables during settling so components cannot
-             overwrite the solver's current iterate.
-          d. Collect component residuals and balance residuals.
+        - pressures
+        - enthalpies
+        - temperatures
+        - mass flows
+        - friction factors
+        - pump speeds
+        - user Balance variables
 
-    4. scipy.optimize.least_squares finite-differences the residual function,
-       builds a Jacobian, and computes a trust-region correction.
+    Residuals may include:
 
-    5. The process repeats until scipy reports convergence and the maximum
-       residual is below rtol.
+        - mass conservation
+        - energy conservation
+        - momentum equations
+        - friction-factor equations
+        - user-defined component residuals
+        - Balance residuals
 
+    Mathematical Form
+    -----------------
+    The solver seeks:
+
+        F(x) = 0
+
+    where:
+
+        x = iteration variables
+        F = network residual vector
+
+    The nonlinear system is solved using scipy.optimize.least_squares()
+    with finite-difference Jacobians and a trust-region algorithm.
+
+    State Propagation Architecture
+    ------------------------------
+    Most network quantities are not iteration variables.
+
+    Examples:
+
+        density
+        viscosity
+        Reynolds number
+        species composition
+        fluid properties
+        heat-transfer coefficients
+
+    These quantities are derived from the current iteration variables.
+
+    A challenge in large networks is that derived quantities may depend on
+    other derived quantities:
+
+        composition
+            -> density
+                -> mass flow
+                    -> composition
+
+    and users may define components in any order.
+
+    To make component ordering largely irrelevant, each residual evaluation
+    contains a state-settling phase.
+
+    For a given solver iterate x:
+
+        1. Assign x to the network.
+        2. Evaluate all components.
+        3. Measure changes in non-iteration States.
+        4. Repeat until the network state stops changing.
+
+    This produces a self-consistent set of derived quantities before
+    residuals are evaluated.
+
+    Iteration Variable Protection
+    -----------------------------
+    Iteration variables belong exclusively to the nonlinear solver.
+
+    During state settling, component evaluations are allowed to update
+    derived States but are not allowed to permanently modify solver-owned
+    variables.
+
+    To enforce this:
+
+        - iteration variables are snapshotted
+        - component evaluations are performed
+        - iteration variables are restored
+
+    before and after every component evaluation pass.
+
+    This prevents explicit state calculations from corrupting the solver's
+    current iterate.
+
+    Convergence Process
+    -------------------
+    For each nonlinear iteration:
+
+        x_k
+        ↓
+        assign iteration variables
+        ↓
+        settle derived states
+        ↓
+        evaluate residuals
+        ↓
+        finite-difference Jacobian
+        ↓
+        trust-region correction
+        ↓
+        x_(k+1)
+
+    The process repeats until scipy reports convergence and the final
+    residual magnitude satisfies the requested residual tolerance.
+
+    Benefits
+    --------
+    This architecture provides:
+
+        - user-defined component ordering
+        - automatic propagation of derived quantities
+        - support for algebraic balances
+        - support for overdetermined systems
+        - separation between solver variables and derived states
+        - compatibility with future transient solvers
     """
 
     def __init__(self, network: Network):
@@ -75,6 +180,23 @@ class SteadyState:
     # ------------------------------------------------------------------
     # Order-independent state evaluation for steady-state solving
     # ------------------------------------------------------------------
+    # State-settling engine
+    #
+    # This is NOT a nonlinear solve.
+    #
+    # It simply propagates explicit state calculations until all derived
+    # quantities become self-consistent for the current solver iterate.
+    #
+    # Example:
+    #
+    #     composition
+    #         -> density
+    #             -> mass flow
+    #
+    # may require several passes through the network before all values
+    # stop changing.
+    #
+    # The nonlinear solve is performed by least_squares().
 
     def evaluate_network_states(
         self,
