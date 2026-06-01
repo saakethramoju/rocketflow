@@ -7,7 +7,7 @@ import numpy as np
 from System import Component, State, Composition
 from Utilities import Fluid, FluidRegistry
 
-from ...SystemExceptions import InvalidThermoStateError
+from Exceptions import InvalidThermoStateError
 
 if TYPE_CHECKING:
     from System import Network
