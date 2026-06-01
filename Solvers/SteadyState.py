@@ -7,6 +7,7 @@ from scipy.optimize import least_squares, Bounds, root
 from rich.console import Console
 from rich.table import Table
 from rich import box
+import time
 
 if TYPE_CHECKING:
     from System import Network
@@ -245,11 +246,17 @@ class SteadyState:
         This still uses steady-state state-settling so component order is less
         important even for static evaluations.
         """
+        start_time = time.perf_counter()
+
         self.network.pre_evaluation()
         self.evaluate_network_states()
 
+        elapsed_time = time.perf_counter() - start_time
+
         if verbose:
-            self._verbose_static_print()
+            self._verbose_static_print(
+                elapsed_time=elapsed_time,
+            )
 
         solution = self.network.save(
             filename=filename,
@@ -374,6 +381,9 @@ class SteadyState:
             self.network.keep_feasible,
         )
 
+        # start timing
+        start_time = time.perf_counter()
+
         # Main nonlinear solve.
         sol = least_squares(
             fun=self.residual,
@@ -387,6 +397,9 @@ class SteadyState:
             gtol=gtol,
         )
 
+        # end time
+        elapsed_time = time.perf_counter() - start_time
+
         # Optional rich solver summary.
         if verbose:
             self._verbose_print(
@@ -399,6 +412,7 @@ class SteadyState:
                 gtol=gtol,
                 rtol=rtol,
                 overconstrained=overconstrained,
+                elapsed_time=elapsed_time,
             )
 
         # Check final residual quality.
@@ -490,7 +504,10 @@ class SteadyState:
     # Verbose static evaluation printing
     # ------------------------------------------------------------------
 
-    def _verbose_static_print(self) -> None:
+    def _verbose_static_print(
+        self,
+        elapsed_time: float,
+    ) -> None:
         """Print a short summary for static evaluation mode."""
         table = Table(
             title="Static Network Evaluation",
@@ -504,6 +521,7 @@ class SteadyState:
 
         table.add_row("Mode", "Static evaluation")
         table.add_row("Nonlinear solve", "Not performed")
+        table.add_row("Evaluation time",f"{elapsed_time:.3f} s")
         table.add_row("Components", str(len(self.network.components)))
         table.add_row(
             "Iteration variables",
@@ -530,6 +548,7 @@ class SteadyState:
         gtol: float,
         rtol: float,
         overconstrained: bool = False,
+        elapsed_time: float = 0.0,
     ) -> None:
         """Print solver summary, final variables, and final residuals."""
 
@@ -569,6 +588,7 @@ class SteadyState:
         summary.add_row("Solver method", method)
         summary.add_row("Jacobian method", jac)
         summary.add_row("Function evaluations", str(sol.nfev))
+        summary.add_row("Solve time",f"{elapsed_time:.3f} s")
 
         if hasattr(sol, "njev") and sol.njev is not None:
             summary.add_row("Jacobian evaluations", str(sol.njev))
