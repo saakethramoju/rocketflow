@@ -2,7 +2,7 @@ from System import *
 from Solvers import *
 
 from constants import *
-
+'''
 MixtureNetwork = Network("Mixture Flow")
 
 # ------------------------------------------------------------------
@@ -35,14 +35,13 @@ SourceFluid2 = IdealGasLookup(
     temperature=300,
 )
 
-mixer_pressure = State(1.5e5, bounds=(0, None), keep_feasible=True)
 
 MixerFluid = FluidLookup(
     "Source Fluid 2",
     MixtureNetwork,
     Composition("o2"), # fix so this can be empty
-    pressure=mixer_pressure,
-    temperature=290,
+    pressure=4.7e5,
+    temperature=300,
     flash_values=("pressure", "enthalpy")
 )
 
@@ -90,7 +89,7 @@ Mixer = FlowMixer(
     volume=1,
     mass_flow_in1=Inlet1.mass_flow,
     mass_flow_in2=Inlet2.mass_flow,
-    mass_flow_out=8,
+    mass_flow_out=3.7,
     composition_in1=SourceFluid1.composition,
     composition_in2=SourceFluid2.composition,
     composition=MixerFluid.composition,
@@ -99,7 +98,7 @@ Mixer = FlowMixer(
     enthalpy=MixerFluid.enthalpy,
 )
 
-'''
+"""
 Outlet = DischargeCoefficient(
     "Outlet 1",
     MixtureNetwork,
@@ -110,7 +109,8 @@ Outlet = DischargeCoefficient(
     cross_sectional_area=A,
     mass_flow=Mixer.mass_flow_out,
 )
-'''
+"""
+
 
 Outlet = CompressibleFlowTube(
     "Outlet",
@@ -128,6 +128,7 @@ Outlet = CompressibleFlowTube(
     upstream_static_enthalpy=MixerFluid.enthalpy,
     total_enthalpy=Mixer.total_enthalpy_out
 )
+
 # ------------------------------------------------------------------
 # Solve
 # ------------------------------------------------------------------
@@ -137,10 +138,11 @@ solution = SteadyState(MixtureNetwork).solve(
     verbose=True,
     static=False,
     print_solution=True,
+    jacobian_method='2-point',
 )
-
-
 '''
+
+
 
 MixtureNetwork = Network("Mixture Flow")
 
@@ -264,4 +266,3 @@ solution = SteadyState(MixtureNetwork).solve(
     static=False,
     print_solution=True,
 )
-'''

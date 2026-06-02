@@ -150,6 +150,18 @@ class SteadyState:
         self.network = network
         self.console = Console()
 
+        # Debug snapshots used when scipy fails before returning a solution.
+        # These let verbose=True still print the last attempted variables,
+        # variable adjustments, and any residuals that were available.
+        self._last_debug_x = None
+        self._last_debug_residual = None
+        self._last_debug_error = None
+
+        # Default state-settling controls used inside residual(), since scipy
+        # calls residual(x) without passing solve() keyword arguments.
+        self._state_max_passes = 20
+        self._state_tolerance = 1e-10
+
     # ------------------------------------------------------------------
     # Residual function passed to scipy
     # ------------------------------------------------------------------
@@ -160,17 +172,40 @@ class SteadyState:
 
         scipy calls this many times while solving.
         """
+        # Save the current attempted iterate for failure diagnostics.
+        self._last_debug_x = np.array(x, dtype=float)
+        self._last_debug_residual = None
+        self._last_debug_error = None
+
         # Assign current solver iterate to network State objects.
         self.network.assign_iteration_values(list(x))
 
         try:
             # Propagate explicit component states to a consistent state.
-            self.evaluate_network_states()
+            self.evaluate_network_states(
+                max_passes=self._state_max_passes,
+                tolerance=self._state_tolerance,
+            )
 
             # Collect component and balance residuals.
-            return np.array(self.network.residuals, dtype=float)
+            r = np.array(self.network.residuals, dtype=float)
+            self._last_debug_residual = r
+
+            return r
 
         except Exception as e:
+            # Preserve the original error and whatever residuals can still
+            # be collected, then re-raise so failures are not masked.
+            self._last_debug_error = e
+
+            try:
+                self._last_debug_residual = np.array(
+                    self.network.residuals,
+                    dtype=float,
+                )
+            except Exception:
+                self._last_debug_residual = None
+
             raise RuntimeError(
                 "Solver encountered an error while evaluating the network "
                 "inside evaluate_network_states().\n\n"
@@ -180,23 +215,6 @@ class SteadyState:
     # ------------------------------------------------------------------
     # Order-independent state evaluation for steady-state solving
     # ------------------------------------------------------------------
-    # State-settling engine
-    #
-    # This is NOT a nonlinear solve.
-    #
-    # It simply propagates explicit state calculations until all derived
-    # quantities become self-consistent for the current solver iterate.
-    #
-    # Example:
-    #
-    #     composition
-    #         -> density
-    #             -> mass flow
-    #
-    # may require several passes through the network before all values
-    # stop changing.
-    #
-    # The nonlinear solve is performed by least_squares().
 
     def evaluate_network_states(
         self,
@@ -361,6 +379,8 @@ class SteadyState:
         return_type: str = "dict",
         verbose: bool = False,
         print_solution: bool = False,
+        state_max_passes: int = 20,
+        state_tolerance: float = 1e-10,
     ):
         """
         Evaluate a network without nonlinear solving.
@@ -371,7 +391,10 @@ class SteadyState:
         start_time = time.perf_counter()
 
         self.network.pre_evaluation()
-        self.evaluate_network_states()
+        self.evaluate_network_states(
+            max_passes=state_max_passes,
+            tolerance=state_tolerance,
+        )
 
         elapsed_time = time.perf_counter() - start_time
 
@@ -396,25 +419,155 @@ class SteadyState:
 
     def solve(
         self,
-        filename: str | None = None,
-        return_type: str = "dict",
-        verbose: bool = False,
-        static: bool = False,
-        print_solution: bool = False,
-        solver_method: str = "trf",
-        jacobian_method: str = "3-point",
-        ftol: float = 1e-8,
-        xtol: float = 1e-8,
-        gtol: float = 1e-8,
-        rtol: float = 1e-2,
+        filename: str | None = None,          # Optional file path/name for saving the exported solution.
+        return_type: str = "dict",            # Solution export format passed to network.save().
+        verbose: bool = False,                # If True, print solver summary, variables, and residuals.
+        static: bool = False,                 # If True, skip nonlinear solving and only evaluate the network.
+        print_solution: bool = False,         # If True, print the final exported network state table.
+        solver_method: str = "trf",           # scipy least_squares method: "trf", "dogbox", or "lm".
+        jacobian_method: str = "3-point",     # Finite-difference Jacobian method: "2-point" or "3-point".
+        ftol: float = 1e-8,                   # scipy cost-function termination tolerance.
+        xtol: float = 1e-8,                   # scipy solution-step termination tolerance.
+        gtol: float = 1e-8,                   # scipy gradient/optimality termination tolerance.
+        rtol: float = 1e-2,                   # Maximum acceptable final absolute residual.
+        state_max_passes: int = 20,           # Max derived-state settling passes per residual evaluation.
+        state_tolerance: float = 1e-10,       # Normalized derived-state settling tolerance.
     ):
-        """
-        Solve the steady-state nonlinear system.
 
-        The unknowns are all component iteration variables plus Balance
-        variables. The residuals are all component residuals plus Balance
-        residuals.
         """
+        Solve the network's steady-state nonlinear system.
+
+        This method finds values for all iteration variables such that the
+        network residuals are driven to zero (or as close to zero as
+        possible within the requested tolerances).
+
+        The solve process is:
+
+            1. Run component pre-evaluation.
+            2. Collect all iteration variables.
+            3. Propagate derived states until the network settles.
+            4. Evaluate residuals.
+            5. Use scipy.optimize.least_squares() to solve the system.
+            6. Re-evaluate the network using the converged solution.
+            7. Export and optionally print the final results.
+
+        Parameters
+        ----------
+        filename : str | None, optional
+            Optional file path passed to network.save().
+
+        return_type : str, optional
+            Format returned by network.save().
+            Common options are "dict" and "dataframe".
+
+        verbose : bool, optional
+            If True, print detailed solver diagnostics including:
+
+                - convergence information
+                - solve time
+                - iteration variables
+                - variable adjustments
+                - residual values
+
+            Diagnostic information is also printed when the solve fails.
+
+        static : bool, optional
+            If True, skip nonlinear solving and perform only a network
+            evaluation using the current State values.
+
+        print_solution : bool, optional
+            If True, print the final exported network solution table.
+
+        solver_method : str, optional
+            scipy.optimize.least_squares() algorithm.
+
+            Supported options:
+
+                "trf"     Trust Region Reflective (recommended)
+                "dogbox"  Dogleg trust region
+                "lm"      Levenberg-Marquardt
+
+        jacobian_method : str, optional
+            Finite-difference Jacobian approximation.
+
+            Supported options:
+
+                "2-point"  Faster
+                "3-point"  More accurate
+
+        ftol : float, optional
+            Cost-function convergence tolerance passed to scipy.
+
+        xtol : float, optional
+            Iteration-variable convergence tolerance passed to scipy.
+
+        gtol : float, optional
+            Gradient/optimality convergence tolerance passed to scipy.
+
+        rtol : float, optional
+            Maximum acceptable absolute residual after convergence.
+
+            The solve is considered unsuccessful if:
+
+                max(abs(residual)) > rtol
+
+            even if scipy reports convergence.
+
+        state_max_passes : int, optional
+            Maximum number of state-settling passes performed during each
+            residual evaluation.
+
+            Higher values may improve convergence for strongly coupled
+            networks but increase solve time.
+
+        state_tolerance : float, optional
+            Normalized convergence tolerance used by the state-settling
+            algorithm.
+
+            Smaller values enforce tighter consistency between derived
+            states but increase solve time.
+
+        Returns
+        -------
+        Any
+            Result returned by network.save(return_type=...).
+
+        Raises
+        ------
+        ValueError
+            If solver settings are invalid or the system is underdetermined.
+
+        RuntimeError
+            If the nonlinear solve fails, encounters an invalid network
+            state, or converges to residuals larger than rtol.
+
+        Notes
+        -----
+        This solver supports:
+
+            - user-defined components
+            - user-defined balances
+            - overdetermined systems
+            - variable bounds
+            - derived-state propagation
+            - order-independent component evaluation
+
+        The reported "Variable Adjustment" is:
+
+            x_final - x_initial
+
+        and the reported "Normalized Variable Adjustment" is:
+
+            abs(x_final - x_initial) / max(abs(x_final), 1)
+
+        which indicates how far each iteration variable moved from its
+        initial guess during the solve.
+        """
+
+        # Store state-settling controls for residual(), since scipy only calls
+        # residual(x) and does not pass solve() keyword arguments through.
+        self._state_max_passes = state_max_passes
+        self._state_tolerance = state_tolerance
 
         # Static mode skips nonlinear solving.
         if static:
@@ -423,6 +576,8 @@ class SteadyState:
                 return_type=return_type,
                 verbose=verbose,
                 print_solution=print_solution,
+                state_max_passes=state_max_passes,
+                state_tolerance=state_tolerance,
             )
 
         # Validate selected least_squares method.
@@ -456,6 +611,19 @@ class SteadyState:
                 f"Got {rtol}"
             )
 
+        # Validate state-settling controls.
+        if state_max_passes <= 0:
+            raise ValueError(
+                f"state_max_passes must be positive. "
+                f"Got {state_max_passes}"
+            )
+
+        if state_tolerance <= 0.0:
+            raise ValueError(
+                f"state_tolerance must be positive. "
+                f"Got {state_tolerance}"
+            )
+
         # One-time component setup.
         self.network.pre_evaluation()
 
@@ -466,7 +634,10 @@ class SteadyState:
         )
 
         # Initial state propagation and residual vector.
-        self.evaluate_network_states()
+        self.evaluate_network_states(
+            max_passes=state_max_passes,
+            tolerance=state_tolerance,
+        )
 
         r0 = np.array(
             self.network.residuals,
@@ -483,6 +654,8 @@ class SteadyState:
                 return_type=return_type,
                 verbose=verbose,
                 print_solution=print_solution,
+                state_max_passes=state_max_passes,
+                state_tolerance=state_tolerance,
             )
 
         # least_squares requires at least as many residuals as unknowns.
@@ -506,23 +679,52 @@ class SteadyState:
         # start timing
         start_time = time.perf_counter()
 
-        # Main nonlinear solve.
-        sol = least_squares(
-            fun=self.residual,
-            x0=x0,
-            method=method,
-            bounds=bounds,
-            x_scale="jac",
-            jac=jac,
-            ftol=ftol,
-            xtol=xtol,
-            gtol=gtol,
-        )
+        try:
+            # Main nonlinear solve.
+            sol = least_squares(
+                fun=self.residual,
+                x0=x0,
+                method=method,
+                bounds=bounds,
+                x_scale="jac",
+                jac=jac,
+                ftol=ftol,
+                xtol=xtol,
+                gtol=gtol,
+            )
+
+        except Exception:
+            elapsed_time = time.perf_counter() - start_time
+
+            if verbose:
+                self._verbose_failure_print(
+                    x0=x0,
+                    method=method,
+                    jac=jac,
+                    ftol=ftol,
+                    xtol=xtol,
+                    gtol=gtol,
+                    rtol=rtol,
+                    overconstrained=overconstrained,
+                    elapsed_time=elapsed_time,
+                )
+
+            raise
 
         # end time
         elapsed_time = time.perf_counter() - start_time
 
+        # Check final residual quality.
+        final_residual = np.array(
+            sol.fun,
+            dtype=float,
+        )
+
+        max_residual = np.max(np.abs(final_residual))
+
         # Optional rich solver summary.
+        # This is intentionally printed before the residual-quality failure
+        # check so verbose=True still reports failed convergences.
         if verbose:
             self._verbose_print(
                 sol=sol,
@@ -536,14 +738,6 @@ class SteadyState:
                 overconstrained=overconstrained,
                 elapsed_time=elapsed_time,
             )
-
-        # Check final residual quality.
-        final_residual = np.array(
-            sol.fun,
-            dtype=float,
-        )
-
-        max_residual = np.max(np.abs(final_residual))
 
         if (
             not sol.success
@@ -564,7 +758,10 @@ class SteadyState:
         )
 
         # Re-evaluate final derived states using final solver variables.
-        self.evaluate_network_states()
+        self.evaluate_network_states(
+            max_passes=state_max_passes,
+            tolerance=state_tolerance,
+        )
 
         # Save/export final solution.
         solution = self.network.save(
@@ -656,6 +853,64 @@ class SteadyState:
         self.console.print()
 
     # ------------------------------------------------------------------
+    # Shared verbose-label helpers
+    # ------------------------------------------------------------------
+
+    def _find_variable_labels(self, target):
+        """Find all component/balance attributes that reference a State."""
+        labels = []
+
+        for component in self.network.component_list:
+            for attr_name, attr_value in component.__dict__.items():
+                if attr_value is target:
+                    labels.append(
+                        f"{component.name}.{attr_name}"
+                    )
+
+                if hasattr(attr_value, "fraction"):
+                    for species, state in attr_value:
+                        if state is target:
+                            labels.append(
+                                f"{component.name}.{attr_name}.{species}"
+                            )
+
+        for balance in self.network.balance_list:
+            for attr_name, attr_value in balance.__dict__.items():
+                if attr_value is target:
+                    labels.append(
+                        f"{balance.name}.{attr_name}"
+                    )
+
+        if labels:
+            return labels
+
+        return [str(target)]
+
+    def _collect_residual_labels(self) -> list[str]:
+        """Collect printed labels for component and balance residuals."""
+        residual_labels = []
+
+        for component in self.network.component_list:
+            component_residuals = component.residuals
+
+            if isinstance(component_residuals, (list, tuple)):
+                for i in range(len(component_residuals)):
+                    residual_labels.append(f"{component.name}.residual[{i}]")
+            else:
+                residual_labels.append(f"{component.name}.residual")
+
+        for balance in self.network.balance_list:
+            balance_residuals = balance.residuals
+
+            if isinstance(balance_residuals, (list, tuple)):
+                for i in range(len(balance_residuals)):
+                    residual_labels.append(f"{balance.name}.residual[{i}]")
+            else:
+                residual_labels.append(f"{balance.name}.residual")
+
+        return residual_labels
+
+    # ------------------------------------------------------------------
     # Verbose nonlinear solve printing
     # ------------------------------------------------------------------
 
@@ -679,13 +934,14 @@ class SteadyState:
 
         dx = np.array(sol.x, dtype=float) - np.array(x0, dtype=float)
 
-        # Largest variable movement from initial guess:
-        # max(|x_final - x_initial| / max(|x_final|, 1))
-        normalized_variable_change = (
+        # Variable adjustment from initial guess to final solution.
+        normalized_variable_adjustment = (
             np.abs(dx) / np.maximum(np.abs(sol.x), 1.0)
         )
 
-        max_normalized_variable_change = np.max(normalized_variable_change)
+        max_normalized_variable_adjustment = np.max(
+            normalized_variable_adjustment
+        )
 
         # --------------------------------------------------------------
         # Solver summary table.
@@ -727,9 +983,10 @@ class SteadyState:
 
         summary.add_row("Max |residual|", f"{max_residual:.3e}")
         summary.add_row("RMS residual", f"{rms_residual:.3e}")
-        # Largest variable movement from initial guess:
-        # max(|x_final - x_initial| / max(|x_final|, 1))
-        summary.add_row("Max normalized variable adjustment",f"{max_normalized_variable_change:.3e}")
+        summary.add_row(
+            "Max normalized variable adjustment",
+            f"{max_normalized_variable_adjustment:.3e}",
+        )
         summary.add_row("Residual tolerance", f"{rtol:.3e}")
         summary.add_row("ftol", f"{ftol:.3e}")
         summary.add_row("xtol", f"{xtol:.3e}")
@@ -748,41 +1005,11 @@ class SteadyState:
         variables.add_column("Index", justify="right", style="dim")
         variables.add_column("Variable", style="#fdf0d5")
         variables.add_column("Value", justify="right", style="#D84135")
-        variables.add_column("Variable Adjustment",justify="right",style="#3B629E")
+        variables.add_column("Variable Adjustment", justify="right", style="#3B629E")
         variables.add_column("Normalized Variable Adjustment", justify="right", style="#3B629E")
 
-        def find_variable_labels(target):
-            """Find all component/balance attributes that reference a State."""
-            labels = []
-
-            for component in self.network.component_list:
-                for attr_name, attr_value in component.__dict__.items():
-                    if attr_value is target:
-                        labels.append(
-                            f"{component.name}.{attr_name}"
-                        )
-
-                    if hasattr(attr_value, "fraction"):
-                        for species, state in attr_value:
-                            if state is target:
-                                labels.append(
-                                    f"{component.name}.{attr_name}.{species}"
-                                )
-
-            for balance in self.network.balance_list:
-                for attr_name, attr_value in balance.__dict__.items():
-                    if attr_value is target:
-                        labels.append(
-                            f"{balance.name}.{attr_name}"
-                        )
-
-            if labels:
-                return labels
-
-            return [str(target)]
-
         variable_labels = [
-            find_variable_labels(var)
+            self._find_variable_labels(var)
             for var in self.network.collect_all_iteration_variables()
         ]
 
@@ -798,7 +1025,7 @@ class SteadyState:
                 label,
                 f"{val:.6e}",
                 f"{dx[i]:+.6e}",
-                f"{normalized_variable_change[i]:.3e}",
+                f"{normalized_variable_adjustment[i]:.3e}",
             )
 
         # --------------------------------------------------------------
@@ -815,25 +1042,7 @@ class SteadyState:
         residuals.add_column("Residual", style="#fdf0d5")
         residuals.add_column("Value", justify="right", style="#3B629E")
 
-        residual_labels = []
-
-        for component in self.network.component_list:
-            component_residuals = component.residuals
-
-            if isinstance(component_residuals, (list, tuple)):
-                for i in range(len(component_residuals)):
-                    residual_labels.append(f"{component.name}.residual[{i}]")
-            else:
-                residual_labels.append(f"{component.name}.residual")
-
-        for balance in self.network.balance_list:
-            balance_residuals = balance.residuals
-
-            if isinstance(balance_residuals, (list, tuple)):
-                for i in range(len(balance_residuals)):
-                    residual_labels.append(f"{balance.name}.residual[{i}]")
-            else:
-                residual_labels.append(f"{balance.name}.residual")
+        residual_labels = self._collect_residual_labels()
 
         for i, r in enumerate(sol.fun):
             label = (
@@ -852,4 +1061,132 @@ class SteadyState:
         self.console.print(summary)
         self.console.print(variables)
         self.console.print(residuals)
+        self.console.print()
+
+    def _verbose_failure_print(
+        self,
+        x0: np.ndarray,
+        method: str,
+        jac: str,
+        ftol: float,
+        xtol: float,
+        gtol: float,
+        rtol: float,
+        overconstrained: bool = False,
+        elapsed_time: float = 0.0,
+    ) -> None:
+        """
+        Print the last attempted solver state when scipy fails before
+        returning a solution object.
+        """
+        x = self._last_debug_x
+        r = self._last_debug_residual
+        error = self._last_debug_error
+
+        summary = Table(
+            title="Steady-State Solver Failure",
+            box=box.SIMPLE_HEAVY,
+            show_header=True,
+            header_style="bold",
+        )
+
+        summary.add_column("Quantity", style="bold")
+        summary.add_column("Value", justify="right")
+
+        summary.add_row("Success", "False")
+        summary.add_row("Solver method", method)
+        summary.add_row("Jacobian method", jac)
+        summary.add_row("Solve time", f"{elapsed_time:.3f} s")
+
+        if overconstrained:
+            summary.add_row(
+                "Warning",
+                "System is overconstrained",
+                style="yellow",
+            )
+
+        if error is not None:
+            summary.add_row("Error type", type(error).__name__)
+            summary.add_row("Error", str(error))
+
+        summary.add_row("Residual tolerance", f"{rtol:.3e}")
+        summary.add_row("ftol", f"{ftol:.3e}")
+        summary.add_row("xtol", f"{xtol:.3e}")
+        summary.add_row("gtol", f"{gtol:.3e}")
+
+        self.console.print()
+        self.console.print(summary)
+
+        if x is not None:
+            dx = np.array(x, dtype=float) - np.array(x0, dtype=float)
+
+            # Variable adjustment from initial guess to last attempted iterate.
+            normalized_variable_adjustment = (
+                np.abs(dx) / np.maximum(np.abs(x), 1.0)
+            )
+
+            variables = Table(
+                title="Last Attempted Solution Variables",
+                box=box.SIMPLE,
+                show_header=True,
+                header_style="bold",
+            )
+
+            variables.add_column("Index", justify="right", style="dim")
+            variables.add_column("Variable", style="#fdf0d5")
+            variables.add_column("Value", justify="right", style="#D84135")
+            variables.add_column("Variable Adjustment", justify="right", style="#3B629E")
+            variables.add_column("Normalized Variable Adjustment", justify="right", style="#3B629E")
+
+            variable_labels = [
+                self._find_variable_labels(var)
+                for var in self.network.collect_all_iteration_variables()
+            ]
+
+            for i, val in enumerate(x):
+                label = (
+                    "\n".join(variable_labels[i])
+                    if i < len(variable_labels)
+                    else "<unlabeled>"
+                )
+
+                variables.add_row(
+                    f"x[{i}]",
+                    label,
+                    f"{val:.6e}",
+                    f"{dx[i]:+.6e}",
+                    f"{normalized_variable_adjustment[i]:.3e}",
+                )
+
+            self.console.print(variables)
+
+        if r is not None:
+            residuals = Table(
+                title="Last Available Residuals",
+                box=box.SIMPLE,
+                show_header=True,
+                header_style="bold",
+            )
+
+            residuals.add_column("Index", justify="right", style="dim")
+            residuals.add_column("Residual", style="#fdf0d5")
+            residuals.add_column("Value", justify="right", style="#3B629E")
+
+            residual_labels = self._collect_residual_labels()
+
+            for i, value in enumerate(r):
+                label = (
+                    residual_labels[i]
+                    if i < len(residual_labels)
+                    else "<unlabeled>"
+                )
+
+                residuals.add_row(
+                    f"r[{i}]",
+                    label,
+                    f"{value:.6e}",
+                )
+
+            self.console.print(residuals)
+
         self.console.print()
