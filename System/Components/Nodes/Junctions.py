@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from System import Network
 
 
-class FlowMixerOld(Component):
+class FlowMixer(Component):
 
     def __init__(
         self,
@@ -130,7 +130,7 @@ class FlowMixerOld(Component):
         return residuals
     
 
-
+'''
 class FlowMixer(Component):
 
     def __init__(
@@ -239,7 +239,7 @@ class FlowMixer(Component):
             + self.mass_flow_in2.value
             - self.mass_flow_out.value
         ]
-    
+'''
 
 
 

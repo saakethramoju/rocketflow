@@ -679,9 +679,13 @@ class SteadyState:
 
         dx = np.array(sol.x, dtype=float) - np.array(x0, dtype=float)
 
-        normalized_correction = np.max(
+        # Largest variable movement from initial guess:
+        # max(|x_final - x_initial| / max(|x_final|, 1))
+        normalized_variable_change = (
             np.abs(dx) / np.maximum(np.abs(sol.x), 1.0)
         )
+
+        max_normalized_variable_change = np.max(normalized_variable_change)
 
         # --------------------------------------------------------------
         # Solver summary table.
@@ -723,7 +727,9 @@ class SteadyState:
 
         summary.add_row("Max |residual|", f"{max_residual:.3e}")
         summary.add_row("RMS residual", f"{rms_residual:.3e}")
-        summary.add_row("Max normalized correction", f"{normalized_correction:.3e}")
+        # Largest variable movement from initial guess:
+        # max(|x_final - x_initial| / max(|x_final|, 1))
+        summary.add_row("Max normalized variable adjustment",f"{max_normalized_variable_change:.3e}")
         summary.add_row("Residual tolerance", f"{rtol:.3e}")
         summary.add_row("ftol", f"{ftol:.3e}")
         summary.add_row("xtol", f"{xtol:.3e}")
@@ -742,6 +748,8 @@ class SteadyState:
         variables.add_column("Index", justify="right", style="dim")
         variables.add_column("Variable", style="#fdf0d5")
         variables.add_column("Value", justify="right", style="#D84135")
+        variables.add_column("Variable Adjustment",justify="right",style="#3B629E")
+        variables.add_column("Normalized Variable Adjustment", justify="right", style="#3B629E")
 
         def find_variable_labels(target):
             """Find all component/balance attributes that reference a State."""
@@ -789,6 +797,8 @@ class SteadyState:
                 f"x[{i}]",
                 label,
                 f"{val:.6e}",
+                f"{dx[i]:+.6e}",
+                f"{normalized_variable_change[i]:.3e}",
             )
 
         # --------------------------------------------------------------
