@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 
 
-
 class IsentropicCompressibleOrifice(Component):
     """
     Assumes ideal gas
@@ -31,6 +30,9 @@ class IsentropicCompressibleOrifice(Component):
                  total_enthalpy: State | None = None):
         
         self.setup()
+
+        if not self.total_enthalpy.is_assigned:
+            self.total_enthalpy = State()
     
 
     def evaluate_states(self):
@@ -42,6 +44,9 @@ class IsentropicCompressibleOrifice(Component):
         CdA = self.discharge_coefficient.value * self.cross_sectional_area.value
         R = self.specific_gas_constant.value
         g = self.specific_heat_ratio.value
+
+        cp = g * R / (g - 1.0)
+        self.total_enthalpy.value = cp * T1
 
         if np.isclose(P1, P2):
             self.mass_flow.value = 0.0
@@ -63,12 +68,6 @@ class IsentropicCompressibleOrifice(Component):
             flow_function = np.sqrt((2 * g / (R * To * (g - 1))) * (pressure_ratio ** (2 / g) - pressure_ratio ** ((g + 1) / g)))
 
         self.mass_flow.value = sign * CdA * Po * flow_function
-
-        if not self.total_enthalpy.is_assigned:
-            cp = g * R / (g - 1.0)
-            self.total_enthalpy.value = cp * To
-
-
 
 
 
@@ -132,6 +131,10 @@ class IsentropicAreaChange(Component):
         self._use_downstream_area = downstream_area is not None
 
         self.setup()
+
+        if not self.total_enthalpy.is_assigned:
+            self.total_enthalpy = State()
+
         temp = self.exit_mach_regime
         self.exit_mach_regime = self.exit_mach_regime.lower()
 
@@ -338,11 +341,13 @@ class CompressibleFlowTube(Component):
     ):
         self.setup()
 
+        if not self.total_enthalpy.is_assigned:
+            self.total_enthalpy = State()
+
     def evaluate_states(self):
         mdot = self.mass_flow.value
         p1 = self.upstream_static_pressure.value
         rho1 = self.upstream_density.value
-        h1 = self.upstream_static_enthalpy.value
         p2 = self.downstream_static_pressure.value
         rho2 = self.downstream_density.value
         L = self.length.value
@@ -460,6 +465,9 @@ class ChokedFannoFlow(Component):
     ):
         self._use_given_mach = upstream_mach_number is not None
         self.setup()
+
+        if not self.total_enthalpy.is_assigned:
+            self.total_enthalpy = State()
 
         temp = self.regime
         self.regime = self.regime.lower()
@@ -653,6 +661,12 @@ class ChokedRayleighFlow(Component):
     ):
         self._use_given_mach = upstream_mach_number is not None
         self.setup()
+
+        if not self.total_enthalpy_in.is_assigned:
+            self.total_enthalpy_in = State()
+
+        if not self.total_enthalpy_out.is_assigned:
+            self.total_enthalpy_out = State()
 
         original_regime = self.regime
         self.regime = self.regime.lower()

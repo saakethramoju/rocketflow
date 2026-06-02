@@ -8,9 +8,7 @@ if TYPE_CHECKING:
     from System import Network
 
 
-
-'''
-class FlowMixer(Component):
+class FlowMixerOld(Component):
 
     def __init__(
         self,
@@ -35,17 +33,11 @@ class FlowMixer(Component):
     ):
         self.setup()
 
-        # Energy is solved only when inlet enthalpy and internal enthalpy exist.
         self._solve_energy = (
             self.total_enthalpy_in1.is_assigned
             and self.enthalpy.is_assigned
             and self.total_enthalpy_in2.is_assigned
         )
-
-        # Default outlet enthalpies to internal enthalpy.
-        if self.enthalpy.is_assigned and not self.total_enthalpy_out.is_assigned:
-            self.total_enthalpy_out = self.enthalpy
-
 
         self._solve_species = (
             self.composition.is_assigned
@@ -53,13 +45,14 @@ class FlowMixer(Component):
             and self.composition_in2.is_assigned
         )
 
-
     def evaluate_states(self):
         if not self._solve_species:
             return
-        
-        extra_species = set(self.composition.species) - (set(self.composition_in1.species) 
-                                                         | set(self.composition_in2.species))
+
+        extra_species = set(self.composition.species) - (
+            set(self.composition_in1.species)
+            | set(self.composition_in2.species)
+        )
 
         if extra_species:
             raise ValueError(
@@ -79,7 +72,6 @@ class FlowMixer(Component):
 
         mdot1 = self.mass_flow_in1.value
         mdot2 = self.mass_flow_in2.value
-
         mdot_total = mdot1 + mdot2
 
         if abs(mdot_total) < 1e-12:
@@ -102,7 +94,6 @@ class FlowMixer(Component):
                 mdot1 * yi1 + mdot2 * yi2
             ) / mdot_total
 
-
     @property
     def iteration_variables(self) -> list[State]:
         variables = [self.pressure]
@@ -111,7 +102,6 @@ class FlowMixer(Component):
             variables.append(self.enthalpy)
 
         return variables
-
 
     @property
     def residuals(self) -> list[float]:
@@ -124,15 +114,22 @@ class FlowMixer(Component):
         if self._solve_energy:
             qdot = self.heat_rate.value if self.heat_rate.is_assigned else 0.0
 
+            h_out = (
+                self.total_enthalpy_out.value
+                if self.total_enthalpy_out.is_assigned
+                else self.enthalpy.value
+            )
+
             residuals.append(
                 self.mass_flow_in1.value * self.total_enthalpy_in1.value
                 + self.mass_flow_in2.value * self.total_enthalpy_in2.value
-                - self.mass_flow_out.value * self.total_enthalpy_out.value
+                - self.mass_flow_out.value * h_out
                 + qdot
             )
 
         return residuals
-'''
+    
+
 
 class FlowMixer(Component):
 
@@ -164,9 +161,6 @@ class FlowMixer(Component):
             and self.total_enthalpy_in2.is_assigned
             and self.enthalpy.is_assigned
         )
-
-        if self.enthalpy.is_assigned and not self.total_enthalpy_out.is_assigned:
-            self.total_enthalpy_out = self.enthalpy
 
         self._solve_species = (
             self.composition.is_assigned
@@ -245,7 +239,7 @@ class FlowMixer(Component):
             + self.mass_flow_in2.value
             - self.mass_flow_out.value
         ]
-
+    
 
 
 
@@ -254,9 +248,10 @@ class FlowSplitter(Component):
     """
     Notes
     -----
-    1) Species conservation solves for the composition at 
+    1) Species conservation solves for the composition at
        outlet 2 only.
-    """    
+    """
+
     def __init__(
         self,
         name: str,
@@ -281,34 +276,23 @@ class FlowSplitter(Component):
     ):
         self.setup()
 
-        # Energy is solved only when inlet enthalpy and internal enthalpy exist.
         self._solve_energy = (
             self.total_enthalpy_in.is_assigned
             and self.enthalpy.is_assigned
         )
 
-        # Default outlet enthalpies to internal enthalpy.
-        if self.enthalpy.is_assigned and not self.total_enthalpy_out1.is_assigned:
-            self.total_enthalpy_out1 = self.enthalpy
-
-        if self.enthalpy.is_assigned and not self.total_enthalpy_out2.is_assigned:
-            self.total_enthalpy_out2 = self.enthalpy
-
-        # Steady-state: inlet composition overrides internal composition.
         if self.composition_in.is_assigned:
             self.composition.copy_from(
                 self.composition_in,
                 copy_values=True,
             )
 
-        # Species splitting is only possible if internal composition and outlet1 exist.
         self._solve_species = (
             self.composition.is_assigned
             and self.composition_out1.is_assigned
         )
 
         if self._solve_species:
-            # Outlet 1 cannot contain species absent from internal composition.
             extra_species = (
                 set(self.composition_out1.species)
                 - set(self.composition.species)
@@ -320,14 +304,12 @@ class FlowSplitter(Component):
                     f"composition: {extra_species}"
                 )
 
-            # Outlet 2 gets the same species basis, but values are solved later.
             self.composition_out2.copy_from(
                 self.composition,
                 copy_values=True,
             )
 
         elif self.composition.is_assigned:
-            # Ordinary splitter: both outlets match internal composition.
             self.composition_out1.copy_from(
                 self.composition,
                 copy_values=True,
@@ -338,16 +320,13 @@ class FlowSplitter(Component):
                 copy_values=True,
             )
 
-
     def evaluate_states(self) -> None:
-        # Steady-state: inlet composition overrides internal composition.
         if self.composition_in.is_assigned:
             self.composition.copy_from(
                 self.composition_in,
                 copy_values=True,
             )
 
-        # Ordinary splitter: both outlets match internal composition.
         if not self._solve_species:
             if self.composition.is_assigned:
                 self.composition_out1.copy_from(
@@ -372,7 +351,6 @@ class FlowSplitter(Component):
         if abs(mdot2) < 1e-12:
             return
 
-        # Use current outlet flow guesses, not possibly stale inlet flow.
         mdot_total = mdot1 + mdot2
 
         for species in self.composition.species:
@@ -385,7 +363,6 @@ class FlowSplitter(Component):
             ) / mdot2
 
         self.composition_out2.validate()
-        
 
     @property
     def iteration_variables(self) -> list[State]:
@@ -407,10 +384,22 @@ class FlowSplitter(Component):
         if self._solve_energy:
             qdot = self.heat_rate.value if self.heat_rate.is_assigned else 0.0
 
+            h_out1 = (
+                self.total_enthalpy_out1.value
+                if self.total_enthalpy_out1.is_assigned
+                else self.enthalpy.value
+            )
+
+            h_out2 = (
+                self.total_enthalpy_out2.value
+                if self.total_enthalpy_out2.is_assigned
+                else self.enthalpy.value
+            )
+
             residuals.append(
                 self.mass_flow_in.value * self.total_enthalpy_in.value
-                - self.mass_flow_out1.value * self.total_enthalpy_out1.value
-                - self.mass_flow_out2.value * self.total_enthalpy_out2.value
+                - self.mass_flow_out1.value * h_out1
+                - self.mass_flow_out2.value * h_out2
                 + qdot
             )
 

@@ -9,6 +9,7 @@ MixtureNetwork = Network("Mixture Flow")
 # Geometry
 # ------------------------------------------------------------------
 
+L = 60 * IN_TO_M
 D = 3 * IN_TO_M
 A = (np.pi / 4) * D**2
 
@@ -45,6 +46,14 @@ MixerFluid = FluidLookup(
     flash_values=("pressure", "enthalpy")
 )
 
+DrainFluid = FluidLookup(
+    "Drain",
+    MixtureNetwork,
+    MixerFluid.composition,
+    pressure=101325,
+    temperature=290,
+    flash_values=("pressure", "enthalpy")
+)
 
 
 
@@ -74,22 +83,23 @@ Inlet2 = DischargeCoefficient(
     cross_sectional_area=A,
 )
 
-Mixer = FlowMixer(
+Mixer = FlowMixerOld(
     "Mixer",
     MixtureNetwork,
     pressure=MixerFluid.pressure,
     volume=1,
     mass_flow_in1=Inlet1.mass_flow,
     mass_flow_in2=Inlet2.mass_flow,
+    mass_flow_out=8,
     composition_in1=SourceFluid1.composition,
     composition_in2=SourceFluid2.composition,
     composition=MixerFluid.composition,
     total_enthalpy_in1=SourceFluid1.enthalpy,
     total_enthalpy_in2=SourceFluid2.enthalpy,
-    enthalpy=MixerFluid.enthalpy
+    enthalpy=MixerFluid.enthalpy,
 )
 
-
+'''
 Outlet = DischargeCoefficient(
     "Outlet 1",
     MixtureNetwork,
@@ -100,7 +110,24 @@ Outlet = DischargeCoefficient(
     cross_sectional_area=A,
     mass_flow=Mixer.mass_flow_out,
 )
+'''
 
+Outlet = CompressibleFlowTube(
+    "Outlet",
+    MixtureNetwork,
+    mass_flow=Mixer.mass_flow_out,
+    upstream_static_pressure=Mixer.pressure,
+    upstream_density=MixerFluid.density,
+    upstream_static_temperature=MixerFluid.temperature,
+    downstream_static_pressure=DrainFluid.pressure,
+    downstream_static_temperature=DrainFluid.temperature,
+    downstream_density=DrainFluid.density,
+    length=L,
+    inner_diameter=D,
+    friction_factor=2e-5,
+    upstream_static_enthalpy=MixerFluid.enthalpy,
+    total_enthalpy=Mixer.total_enthalpy_out
+)
 # ------------------------------------------------------------------
 # Solve
 # ------------------------------------------------------------------
