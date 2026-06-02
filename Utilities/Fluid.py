@@ -2,6 +2,7 @@ from typing import List, Union, Dict, Tuple
 
 import numpy as np
 from scipy.optimize import root_scalar
+from functools import lru_cache
 
 import CoolProp.CoolProp as CP
 
@@ -974,33 +975,9 @@ class Fluid:
         display = FluidRegistry.name(user_name)
         return backend, display
 
-    @classmethod
-    def add_alias(cls, alias: str, coolprop_name: str) -> None:
-        FluidRegistry.add_alias(alias, coolprop_name)
-
-    @classmethod
-    def add_aliases(cls, aliases: dict[str, str]) -> None:
-        for alias, coolprop_name in aliases.items():
-            cls.add_alias(alias, coolprop_name)
-
-    @classmethod
-    def remove_alias(cls, alias: str) -> None:
-        FluidRegistry.remove_alias(alias)
-
-    @classmethod
-    def show_aliases(cls) -> dict[str, str]:
-        aliases = FluidRegistry.aliases
-        width = max(len(alias) for alias in aliases)
-
-        print("Fluid Aliases")
-        print("-" * (width + 20))
-
-        for alias, backend in sorted(aliases.items()):
-            print(f"{alias:<{width}} -> {backend}")
-
-        return dict(aliases)
 
     @staticmethod
+    @lru_cache(maxsize=None)
     def _molar_mass_of(fluid: str) -> float:
         """Return pure-fluid molar mass in kg/mol."""
         return float(CP.PropsSI("M", fluid))

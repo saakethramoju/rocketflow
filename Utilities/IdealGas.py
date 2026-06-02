@@ -107,6 +107,8 @@ class IdealGas:
             raise TypeError("fluid must be a string or a dict mixture")
 
         self._species = [pm.get(sid) for sid in self._species_ids]
+        self._M = self._molar_masses()
+        self._minimum_temperature, self._maximum_temperature = self._temperature_limits()
 
         self._pressure: float | None = None
         self._enthalpy: float | None = None
@@ -325,7 +327,7 @@ class IdealGas:
             raise ValueError("Mole fractions must sum to 1.0")
 
         self._mole_fractions = np.array(value, dtype=float)
-        self._mass_fractions = self.mole_to_mass(self._species_ids, value)
+        self._mass_fractions = self._mole_fractions * self._M / np.dot(self._mole_fractions, self._M)
 
         if self._last_state_values is not None:
             self._set_state(**self._last_state_values)
@@ -346,7 +348,8 @@ class IdealGas:
             raise ValueError("Mass fractions must sum to 1.0")
 
         self._mass_fractions = np.array(value, dtype=float)
-        self._mole_fractions = self.mass_to_mole(self._species_ids, value)
+        inv = self._mass_fractions / self._M
+        self._mole_fractions = inv / inv.sum()
 
         if self._last_state_values is not None:
             self._set_state(**self._last_state_values)
@@ -510,7 +513,7 @@ class IdealGas:
 
     @property
     def molar_mass(self) -> float:
-        return float(1.0 / np.sum(self._mass_fractions / self._molar_masses()))
+        return float(1.0 / np.sum(self._mass_fractions / self._M))
 
     @property
     def gas_constant(self) -> float:
@@ -530,8 +533,9 @@ class IdealGas:
 
     @property
     def specific_heat_ratio(self) -> float:
+        cp = self.specific_heat_cp
         cv = self.specific_heat_cv
-        return None if cv == 0 else self.specific_heat_cp / cv
+        return None if cv == 0 else cp / cv
 
     @property
     def free_energy(self) -> float:
@@ -649,23 +653,11 @@ class IdealGas:
 
     @property
     def minimum_temperature(self) -> float:
-        mins = []
-        for sp in self._species:
-            try:
-                mins.append(float(sp.Tlim()[0]))
-            except Exception:
-                mins.append(200.0)
-        return max(mins)
+        return self._minimum_temperature
 
     @property
     def maximum_temperature(self) -> float:
-        maxs = []
-        for sp in self._species:
-            try:
-                maxs.append(float(sp.Tlim()[1]))
-            except Exception:
-                maxs.append(6000.0)
-        return min(maxs)
+        return self._maximum_temperature
 
     @property
     def is_mixture(self) -> bool:
@@ -781,6 +773,21 @@ class IdealGas:
             [self._molar_mass_of(sid) for sid in self._species_ids],
             dtype=float,
         )
+
+    def _temperature_limits(self) -> Tuple[float, float]:
+        mins = []
+        maxs = []
+
+        for sp in self._species:
+            try:
+                Tlim = sp.Tlim()
+                mins.append(float(Tlim[0]))
+                maxs.append(float(Tlim[1]))
+            except Exception:
+                mins.append(200.0)
+                maxs.append(6000.0)
+
+        return max(mins), min(maxs)
 
     @staticmethod
     def mole_to_mass(species_ids: List[str], mole_fractions: List[float]):

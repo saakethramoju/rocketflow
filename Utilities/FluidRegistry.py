@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-import numpy as np
+
 
 
 @dataclass(frozen=True)
 class SpeciesRecord:
+    """Canonical species entry and backend-specific names."""
+
     name: str
     coolprop: str | None = None
     pyromat: str | None = None  # no "ig." prefix
@@ -233,44 +235,68 @@ ALIASES: dict[str, str] = {
 }
 
 
+def _normalize_key(value: str) -> str:
+    """Return the compact key used for alias and species lookup."""
+    return (
+        value.strip()
+        .lower()
+        .replace(" ", "")
+        .replace("_", "")
+        .replace("-", "")
+    )
+
+
+def _build_name_lookup() -> dict[str, str]:
+    """Build the normalized-name lookup table once for fast registry queries."""
+    lookup = {
+        _normalize_key(name): name
+        for name in SPECIES_DATABASE
+    }
+
+    lookup.update({
+        _normalize_key(alias): name
+        for alias, name in ALIASES.items()
+    })
+
+    return lookup
+
+
+_NAME_LOOKUP = _build_name_lookup()
+
+
 class classproperty(property):
+    """Small descriptor for read-only class-level properties."""
 
     def __get__(self, obj, owner):
         return self.fget(owner)
 
 
 class FluidRegistry:
+    """Registry that maps user-facing names to CoolProp and PYroMat names."""
 
     @staticmethod
     def normalize_name(value: str) -> str:
-        return (
-            value.strip()
-            .lower()
-            .replace(" ", "")
-            .replace("_", "")
-            .replace("-", "")
-        )
+        """Normalize a user name, alias, or canonical name for lookup."""
+        return _normalize_key(value)
 
     @classmethod
     def name(cls, value: str) -> str:
+        """Return the canonical registry name for a user name or alias."""
         lookup = cls.normalize_name(value)
 
-        for alias, name in ALIASES.items():
-            if cls.normalize_name(alias) == lookup:
-                return name
-
-        for name in SPECIES_DATABASE:
-            if cls.normalize_name(name) == lookup:
-                return name
-
-        raise ValueError(f"Unknown fluid/species name: {value!r}")
+        try:
+            return _NAME_LOOKUP[lookup]
+        except KeyError:
+            raise ValueError(f"Unknown fluid/species name: {value!r}")
 
     @classmethod
     def record(cls, value: str) -> SpeciesRecord:
+        """Return the full registry record for a user name or alias."""
         return SPECIES_DATABASE[cls.name(value)]
 
     @classmethod
     def coolprop_name(cls, value: str) -> str:
+        """Return the CoolProp backend name for a user name or alias."""
         record = cls.record(value)
 
         if record.coolprop is None:
@@ -286,6 +312,7 @@ class FluidRegistry:
         value: str,
         include_prefix: bool = False,
     ) -> str:
+        """Return the PYroMat species name for a user name or alias."""
         record = cls.record(value)
 
         if record.pyromat is None:
@@ -300,6 +327,7 @@ class FluidRegistry:
 
     @classmethod
     def supports_coolprop(cls, value: str) -> bool:
+        """Return True if the species has a CoolProp backend mapping."""
         try:
             return cls.record(value).coolprop is not None
         except ValueError:
@@ -307,6 +335,7 @@ class FluidRegistry:
 
     @classmethod
     def supports_pyromat(cls, value: str) -> bool:
+        """Return True if the species has a PYroMat backend mapping."""
         try:
             return cls.record(value).pyromat is not None
         except ValueError:
@@ -314,6 +343,7 @@ class FluidRegistry:
 
     @classmethod
     def supports_both(cls, value: str) -> bool:
+        """Return True if the species is available in both backends."""
         return (
             cls.supports_coolprop(value)
             and cls.supports_pyromat(value)
@@ -321,18 +351,26 @@ class FluidRegistry:
 
     @classmethod
     def add_alias(cls, alias: str, name: str) -> None:
+        """Add a user alias and refresh the lookup cache."""
+        global _NAME_LOOKUP
         ALIASES[alias] = cls.name(name)
+        _NAME_LOOKUP = _build_name_lookup()
 
     @classmethod
     def remove_alias(cls, alias: str) -> None:
+        """Remove a user alias and refresh the lookup cache."""
+        global _NAME_LOOKUP
         ALIASES.pop(alias, None)
+        _NAME_LOOKUP = _build_name_lookup()
 
     @classproperty
     def names(cls) -> list[str]:
+        """Return all canonical registry names."""
         return sorted(SPECIES_DATABASE.keys())
 
     @classproperty
     def coolprop_supported_names(cls) -> list[str]:
+        """Return canonical names with CoolProp support."""
         return sorted(
             name
             for name, record in SPECIES_DATABASE.items()
@@ -341,6 +379,7 @@ class FluidRegistry:
 
     @classproperty
     def pyromat_supported_names(cls) -> list[str]:
+        """Return canonical names with PYroMat support."""
         return sorted(
             name
             for name, record in SPECIES_DATABASE.items()
@@ -349,6 +388,7 @@ class FluidRegistry:
 
     @classproperty
     def supports_both_names(cls) -> list[str]:
+        """Return canonical names supported by both backends."""
         return sorted(
             name
             for name, record in SPECIES_DATABASE.items()
@@ -360,66 +400,13 @@ class FluidRegistry:
 
     @classproperty
     def aliases(cls) -> dict[str, str]:
+        """Return a copy of the user alias table."""
         return dict(sorted(ALIASES.items()))
 
     @classmethod
     def show_species(cls) -> list[str]:
+        """Print and return all canonical registry names."""
         for name in cls.names:
             print(name)
 
         return cls.names
-        
-
-    @classmethod
-    def coolprop_mixture_dict(cls, mixture: dict) -> dict[str, float]:
-        return {
-            cls.coolprop_name(name): float(fraction)
-            for name, fraction in mixture.items()
-        }
-
-
-    @classmethod
-    def pyromat_mixture_dict(
-        cls,
-        mixture: dict,
-        include_prefix: bool = False,
-    ) -> dict[str, float]:
-        return {
-            cls.pyromat_name(name, include_prefix=include_prefix): float(fraction)
-            for name, fraction in mixture.items()
-        }
-
-
-    @classmethod
-    def validate_coolprop_mixture(cls, mixture: dict) -> dict[str, float]:
-        normalized = cls.coolprop_mixture_dict(mixture)
-
-        total = sum(normalized.values())
-
-        if not np.isclose(total, 1.0, atol=1e-6):
-            raise ValueError(
-                f"CoolProp mixture fractions must sum to 1.0. Got {total}."
-            )
-
-        return normalized
-
-
-    @classmethod
-    def validate_pyromat_mixture(
-        cls,
-        mixture: dict,
-        include_prefix: bool = False,
-    ) -> dict[str, float]:
-        normalized = cls.pyromat_mixture_dict(
-            mixture,
-            include_prefix=include_prefix,
-        )
-
-        total = sum(normalized.values())
-
-        if not np.isclose(total, 1.0, atol=1e-6):
-            raise ValueError(
-                f"PYroMat mixture fractions must sum to 1.0. Got {total}."
-            )
-
-        return normalized
