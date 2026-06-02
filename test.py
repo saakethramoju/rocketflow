@@ -260,6 +260,13 @@ ArgonBalance = Balance(
 # Solve
 # ------------------------------------------------------------------
 
+F = Outlet1.discharge_coefficient + Outlet2.discharge_coefficient
+
+MixtureNetwork.track(
+    "Total Outlet Discharge Coefficient",
+    F,
+)
+
 solution = SteadyState(MixtureNetwork).solve(
     return_type="dataframe",
     verbose=True,

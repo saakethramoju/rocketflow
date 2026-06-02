@@ -24,6 +24,7 @@ class Network:
         self.name = name
         self.component_list = []
         self.balance_list = []
+        self.tracked_state_list = []
 
     # ------------------------------------------------------------------
     # Registration
@@ -36,6 +37,16 @@ class Network:
     def add_balance(self, balance: Balance) -> None:
         """Register an algebraic balance with the network."""
         self.balance_list.append(balance)
+
+    def track(self, name: str, state: State) -> State:
+        """
+        Track an extra State or derived State in printed/exported results.
+
+        This does not add residuals or iteration variables. It only exports the
+        value after the network has been evaluated/solved.
+        """
+        self.tracked_state_list.append((name, state))
+        return state
 
     @property
     def components(self) -> list[str]:
@@ -439,6 +450,26 @@ class Network:
                     "value": value,
                 })
 
+        # --------------------------------------------------------------
+        # Export tracked states.
+        # --------------------------------------------------------------
+        for name, state in self.tracked_state_list:
+            if state.is_assigned:
+                try:
+                    value = state.value
+                except Exception:
+                    value = "<unavailable>"
+            else:
+                value = "<uninitialized>"
+
+            records.append({
+                "component_name": self.name,
+                "component_type": "TrackedState",
+                "attribute": name,
+                "value": value,
+            })
+
+            
         # --------------------------------------------------------------
         # Return object.
         # --------------------------------------------------------------
