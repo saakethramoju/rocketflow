@@ -6,6 +6,8 @@ import numpy as np
 from scipy.optimize import root_scalar
 import pyromat as pm
 
+from .FluidRegistry import FluidRegistry
+
 
 class IdealGas:
     """
@@ -24,33 +26,6 @@ class IdealGas:
         density + enthalpy         -> temperature, pressure
         density + internal_energy  -> temperature, pressure
     """
-
-    _ALIASES = {
-        "air": "ig.air",
-        "n2": "ig.N2",
-        "gn2": "ig.N2",
-        "nitrogen": "ig.N2",
-        "o2": "ig.O2",
-        "oxygen": "ig.O2",
-        "go2": "ig.O2",
-        "h2": "ig.H2",
-        "hydrogen": "ig.H2",
-        "he": "ig.He",
-        "helium": "ig.He",
-        "ar": "ig.Ar",
-        "argon": "ig.Ar",
-        "co2": "ig.CO2",
-        "carbon-dioxide": "ig.CO2",
-        "carbon dioxide": "ig.CO2",
-        "co": "ig.CO",
-        "carbon-monoxide": "ig.CO",
-        "carbon monoxide": "ig.CO",
-        "ch4": "ig.CH4",
-        "methane": "ig.CH4",
-        "h2o": "ig.H2O",
-        "water": "ig.H2O",
-        "steam": "ig.H2O",
-    }
 
     _SUTHERLAND_VISCOSITY = {
         "ig.air": {"mu0": 1.716e-5, "T0": 273.0, "S": 111.0},
@@ -745,19 +720,11 @@ class IdealGas:
 
     # ---------------- Utilities ---------------- #
 
-    @staticmethod
-    def _alias_key(name: str) -> str:
-        return name.strip().lower().replace("_", "-")
-
     @classmethod
     def _normalize_name(cls, user_name: str) -> Tuple[str, str]:
 
-        key = cls._alias_key(user_name)
-
-        sid = cls._ALIASES.get(key, user_name)
-
-        if not sid.startswith("ig."):
-            sid = f"ig.{sid}"
+        sid = FluidRegistry.pyromat_name(user_name, include_prefix=True)
+        display = FluidRegistry.name(user_name)
 
         try:
             pm.get(sid)
@@ -767,13 +734,11 @@ class IdealGas:
                 f"Use IdealGas.show_available_gases() to check valid names."
             )
 
-        return sid, user_name
+        return sid, display
 
     @classmethod
     def add_alias(cls, alias: str, pyromat_name: str) -> None:
-        if not pyromat_name.startswith("ig."):
-            pyromat_name = f"ig.{pyromat_name}"
-        cls._ALIASES[cls._alias_key(alias)] = pyromat_name
+        FluidRegistry.add_alias(alias, pyromat_name)
 
     @classmethod
     def add_aliases(cls, aliases: dict[str, str]) -> None:
@@ -782,21 +747,21 @@ class IdealGas:
 
     @classmethod
     def remove_alias(cls, alias: str) -> None:
-        cls._ALIASES.pop(cls._alias_key(alias), None)
+        FluidRegistry.remove_alias(alias)
 
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
-        width = max(len(alias) for alias in cls._ALIASES)
+        aliases = FluidRegistry.aliases
+        width = max(len(alias) for alias in aliases)
         print("IdealGas Aliases")
         print("-" * (width + 20))
-        for alias, backend in sorted(cls._ALIASES.items()):
+        for alias, backend in sorted(aliases.items()):
             print(f"{alias:<{width}} -> {backend}")
-        return dict(cls._ALIASES)
+        return dict(aliases)
 
     @staticmethod
     def get_available_gases() -> List[str]:
-        gases = sorted(k for k in pm.dat.data.keys() if k.startswith("ig."))
-        return [g[3:] for g in gases]
+        return FluidRegistry.pyromat_supported_names
 
     @staticmethod
     def show_available_gases() -> List[str]:

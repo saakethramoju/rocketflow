@@ -5,6 +5,8 @@ from scipy.optimize import root_scalar
 
 import CoolProp.CoolProp as CP
 
+from .FluidRegistry import FluidRegistry
+
 
 class Fluid:
     """
@@ -41,21 +43,6 @@ class Fluid:
         density_enthalpy
         temperature_enthalpy
     """
-
-    _ALIASES = {
-        "rp-1": "n-Dodecane",
-        "rp1": "n-Dodecane",
-        "jet-a": "n-Dodecane",
-        "jeta": "n-Dodecane",
-        "kerosene": "n-Dodecane",
-        "lox": "Oxygen",
-        "water": "Water",
-        "air": "Air",
-        "nitrous": "NitrousOxide",
-        "n2o": "NitrousOxide",
-        "gn2": "Nitrogen",
-        "n2": "Nitrogen"
-    }
 
     _PHASE_NAMES = {
         getattr(CP, "iphase_unknown", -999): "Unknown",
@@ -232,11 +219,6 @@ class Fluid:
         if self._mixture:
             state.set_mass_fractions([float(x) for x in self._mass_fractions])
         return state
-
-    def _update_state(self, input_pair, value1: float, value2: float):
-        """Update CoolProp state and keep the old internal alias current."""
-        self._backend.update(input_pair, float(value1), float(value2))
-        self._pyfluid = self._backend
 
     def _sync_from_backend(self):
         """Synchronize cached pressure and enthalpy from the backend state."""
@@ -982,24 +964,19 @@ class Fluid:
         )
 
     # ---------------- Utilities ---------------- #
-    @staticmethod
-    def _alias_key(name: str) -> str:
-        return name.strip().lower().replace(" ", "").replace("_", "-")
-
     @classmethod
     def _normalize_name(cls, user_name: str) -> Tuple[str, str]:
         """
         Return (backend_name, display_name). If user_name is an alias, map it to
         the CoolProp backend name but preserve user input for display.
         """
-        display = user_name
-        key = cls._alias_key(user_name)
-        backend = cls._ALIASES.get(key, user_name)
+        backend = FluidRegistry.coolprop_name(user_name)
+        display = FluidRegistry.name(user_name)
         return backend, display
 
     @classmethod
     def add_alias(cls, alias: str, coolprop_name: str) -> None:
-        cls._ALIASES[cls._alias_key(alias)] = coolprop_name
+        FluidRegistry.add_alias(alias, coolprop_name)
 
     @classmethod
     def add_aliases(cls, aliases: dict[str, str]) -> None:
@@ -1008,19 +985,20 @@ class Fluid:
 
     @classmethod
     def remove_alias(cls, alias: str) -> None:
-        cls._ALIASES.pop(cls._alias_key(alias), None)
+        FluidRegistry.remove_alias(alias)
 
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
-        width = max(len(alias) for alias in cls._ALIASES)
+        aliases = FluidRegistry.aliases
+        width = max(len(alias) for alias in aliases)
 
         print("Fluid Aliases")
         print("-" * (width + 20))
 
-        for alias, backend in sorted(cls._ALIASES.items()):
+        for alias, backend in sorted(aliases.items()):
             print(f"{alias:<{width}} -> {backend}")
 
-        return dict(cls._ALIASES)
+        return dict(aliases)
 
     @staticmethod
     def _molar_mass_of(fluid: str) -> float:
@@ -1140,7 +1118,10 @@ class Fluid:
     @staticmethod
     def get_available_fluids():
         """Return available CoolProp fluid names."""
-        return sorted(CP.get_global_param_string("FluidsList").split(","))
+        return sorted(
+            FluidRegistry.coolprop_name(name)
+            for name in FluidRegistry.coolprop_supported_names
+        )
 
     @staticmethod
     def available_flash_pairs():

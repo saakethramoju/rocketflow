@@ -92,3 +92,4 @@ System/__pycache__/SystemExceptions.cpython-313.pyc
 Exceptions/__pycache__/__init__.cpython-313.pyc
 Exceptions/__pycache__/FluidExceptions.cpython-313.pyc
 System/Components/Branches/__pycache__/Pumps.cpython-313.pyc
+Utilities/__pycache__/FluidRegistry.cpython-313.pyc
