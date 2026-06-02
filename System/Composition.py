@@ -1,6 +1,6 @@
 import numpy as np
 
-from Utilities import FluidRegistry
+from thermoprop import FluidRegistry
 from .State import State
 
 

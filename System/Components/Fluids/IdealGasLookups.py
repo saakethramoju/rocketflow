@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from System import Component, State, Composition
-from Utilities import Fluid, IdealGas
+from thermoprop import Fluid, IdealGas
 
 from Exceptions import InvalidThermoStateError
 
