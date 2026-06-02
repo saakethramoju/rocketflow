@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from System import Component, State, Composition
-from Utilities import Fluid, FluidRegistry
+from Utilities import Fluid
 
 from Exceptions import InvalidThermoStateError
 
@@ -377,10 +377,9 @@ class FluidLookup(Component):
         values = self.composition.values
 
         if len(values) == 1:
-            species = next(iter(values))
-            return FluidRegistry.coolprop_name(species)
+            return next(iter(values))
 
-        return FluidRegistry.coolprop_mixture_dict(values)
+        return dict(values)
 
     def _composition_values(self) -> tuple[float, ...]:
         return tuple(

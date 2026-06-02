@@ -143,7 +143,7 @@ solution = SteadyState(MixtureNetwork).solve(
 '''
 
 
-'''
+
 MixtureNetwork = Network("Mixture Flow")
 
 # ------------------------------------------------------------------
@@ -273,14 +273,3 @@ solution = SteadyState(MixtureNetwork).solve(
     static=False,
     print_solution=True,
 )
-'''
-from Utilities import Fluid, IdealGas, FluidRegistry
-
-f = Fluid("lox", pressure=50*PSIA_TO_PA, quality=0.5)
-ig = IdealGas("gn2", pressure=101325, temperature=300)
-
-print(f)
-print('------------')
-print(ig)
-
-print(FluidRegistry.record("rp-1"))

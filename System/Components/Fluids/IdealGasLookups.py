@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from System import Component, State, Composition
-from Utilities import Fluid, IdealGas, FluidRegistry
+from Utilities import Fluid, IdealGas
 
 from Exceptions import InvalidThermoStateError
 
@@ -290,8 +290,6 @@ class IdealGasLookup(Component):
         return self._property_states[name]
 
     def _initialize_backend(self) -> None:
-        self._validate_composition_support()
-
         self._coolprop_fluid = self._coolprop_argument_from_composition()
         self._pyromat_fluid = self._pyromat_argument_from_composition()
 
@@ -530,38 +528,23 @@ class IdealGasLookup(Component):
 
         return composition
 
-    def _validate_composition_support(self) -> None:
-
-        for species in self.composition.species:
-            if not FluidRegistry.supports_both(species):
-                raise ValueError(
-                    f"{species!r} must be supported by both CoolProp and PYroMat "
-                    f"because IdealGasLookup uses CoolProp reference enthalpy/internal "
-                    f"energy and PYroMat ideal-gas properties."
-                )
-
     def _coolprop_argument_from_composition(self) -> str | dict[str, float]:
 
         values = self.composition.values
 
         if len(values) == 1:
-            species = next(iter(values))
-            return FluidRegistry.coolprop_name(species)
+            return next(iter(values))
 
-        return FluidRegistry.coolprop_mixture_dict(values)
+        return dict(values)
 
     def _pyromat_argument_from_composition(self) -> str | dict[str, float]:
 
         values = self.composition.values
 
         if len(values) == 1:
-            species = next(iter(values))
-            return FluidRegistry.pyromat_name(species, include_prefix=True)
+            return next(iter(values))
 
-        return FluidRegistry.pyromat_mixture_dict(
-            values,
-            include_prefix=True,
-        )
+        return dict(values)
 
     def _composition_values(self) -> tuple[float, ...]:
         return tuple(
