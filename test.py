@@ -1,275 +1,117 @@
 from System import *
 from Solvers import *
-
 from constants import *
-'''
-MixtureNetwork = Network("Mixture Flow")
+from thermoprop import Propellant
 
-# ------------------------------------------------------------------
-# Geometry
-# ------------------------------------------------------------------
+PropFeedSystem = Network("Prop Feed System")
 
-L = 60 * IN_TO_M
-D = 3 * IN_TO_M
-A = (np.pi / 4) * D**2
+#print(FluidRegistry.propellant_supported_names)
 
-# ------------------------------------------------------------------
-# Fluid lookups
-# ------------------------------------------------------------------
-
-
-SourceFluid1 = FluidLookup(
-    "Source Fluid 1",
-    MixtureNetwork,
-    {"gn2": 1.0},
-    pressure=5e5,
-    temperature=300,
+SourceProp = PropellantLookup(
+    "Source Prop",
+    PropFeedSystem,
+    "ch4",
+    temperature=90,
+    pressure=5e5
 )
 
 
-SourceFluid2 = IdealGasLookup(
-    "Source Fluid 2",
-    MixtureNetwork,
-    {"o2": 1.0},
-    pressure=5e5,
-    temperature=300,
+VolumeProp = PropellantLookup(
+    "Volume Prop",
+    PropFeedSystem,
+    SourceProp.composition,
+    temperature=90,
+    pressure=1e5
 )
 
 
-MixerFluid = FluidLookup(
-    "Source Fluid 2",
-    MixtureNetwork,
-    Composition("o2"), # fix so this can be empty
-    pressure=4.7e5,
-    temperature=300,
-    flash_values=("pressure", "enthalpy")
-)
-
-DrainFluid = FluidLookup(
-    "Drain",
-    MixtureNetwork,
-    MixerFluid.composition,
-    pressure=101325,
-    temperature=290,
-    flash_values=("pressure", "enthalpy")
-)
-
-
-
-
-# ------------------------------------------------------------------
-# Components
-# ------------------------------------------------------------------
-
-Inlet1 = DischargeCoefficient(
-    "Inlet 1",
-    MixtureNetwork,
-    upstream_pressure=SourceFluid1.pressure,
-    downstream_pressure=MixerFluid.pressure,
-    density=SourceFluid1.density,
+TubeIn = DischargeCoefficient(
+    "Tube In",
+    PropFeedSystem,
+    upstream_pressure=SourceProp.pressure,
+    downstream_pressure=VolumeProp.pressure,
+    density=SourceProp.density,
     discharge_coefficient=1,
-    cross_sectional_area=A,
+    cross_sectional_area=0.55e-4
 )
 
 
-Inlet2 = DischargeCoefficient(
-    "Inlet 2",
-    MixtureNetwork,
-    upstream_pressure=SourceFluid2.pressure,
-    downstream_pressure=MixerFluid.pressure,
-    density=SourceFluid2.density,
-    discharge_coefficient=1,
-    cross_sectional_area=A,
-)
-
-Mixer = FlowMixer(
-    "Mixer",
-    MixtureNetwork,
-    pressure=MixerFluid.pressure,
+Vol = SimpleVolume(
+    "Vol",
+    PropFeedSystem,
+    pressure=VolumeProp.pressure,
     volume=1,
-    mass_flow_in1=Inlet1.mass_flow,
-    mass_flow_in2=Inlet2.mass_flow,
-    mass_flow_out=3.7,
-    composition_in1=SourceFluid1.composition,
-    composition_in2=SourceFluid2.composition,
-    composition=MixerFluid.composition,
-    total_enthalpy_in1=SourceFluid1.enthalpy,
-    total_enthalpy_in2=SourceFluid2.enthalpy,
-    enthalpy=MixerFluid.enthalpy,
+    mass_flow_in=TubeIn.mass_flow
 )
 
-"""
-Outlet = DischargeCoefficient(
-    "Outlet 1",
-    MixtureNetwork,
-    upstream_pressure=Mixer.pressure,
+
+TubeOut = DischargeCoefficient(
+    "Tube In",
+    PropFeedSystem,
+    upstream_pressure=VolumeProp.pressure,
     downstream_pressure=101325,
-    density=MixerFluid.density,
+    density=VolumeProp.density,
     discharge_coefficient=1,
-    cross_sectional_area=A,
-    mass_flow=Mixer.mass_flow_out,
-)
-"""
-
-
-Outlet = CompressibleFlowTube(
-    "Outlet",
-    MixtureNetwork,
-    mass_flow=Mixer.mass_flow_out,
-    upstream_static_pressure=Mixer.pressure,
-    upstream_density=MixerFluid.density,
-    upstream_static_temperature=MixerFluid.temperature,
-    downstream_static_pressure=DrainFluid.pressure,
-    downstream_static_temperature=DrainFluid.temperature,
-    downstream_density=DrainFluid.density,
-    length=L,
-    inner_diameter=D,
-    friction_factor=2e-5,
-    upstream_static_enthalpy=MixerFluid.enthalpy,
-    total_enthalpy=Mixer.total_enthalpy_out
+    cross_sectional_area=0.55e-4,
+    mass_flow=Vol.mass_flow_out
 )
 
-# ------------------------------------------------------------------
-# Solve
-# ------------------------------------------------------------------
-
-solution = SteadyState(MixtureNetwork).solve(
-    return_type="dataframe",
+SteadyState(PropFeedSystem).solve(
+    #model="Main Pump",
     verbose=True,
-    static=False,
     print_solution=True,
-    jacobian_method='2-point',
-)
-'''
-
-
-
-MixtureNetwork = Network("Mixture Flow")
-
-# ------------------------------------------------------------------
-# Geometry
-# ------------------------------------------------------------------
-
-D = 3 * IN_TO_M
-A = (np.pi / 4) * D**2
-
-# ------------------------------------------------------------------
-# Shared outlet compositions
-# ------------------------------------------------------------------
-
-SeparatorOutlet1Composition = Composition({"Ar": 1.0})
-SeparatorOutlet2Composition = Composition()
-
-# ------------------------------------------------------------------
-# Fluid lookups first
-# ------------------------------------------------------------------
-
-SourceFluid = FluidLookup(
-    "Source Fluid",
-    MixtureNetwork,
-    {"gn2": 0.75, "O2": 0.01, "Ar": 0.24},
-    pressure=3e5,
-    temperature=300,
+    filename="test.xlsx",
+    #evaluate_all_model_options=True,
 )
 
-VolumeFluid = FluidLookup(
-    "Volume Fluid",
-    MixtureNetwork,
-    SourceFluid.composition,
-    pressure=2e5,
-    temperature=300,
-    flash_values=("pressure", "enthalpy")
-)
 
-SeparatorOutlet1Fluid = FluidLookup(
-    "Separator Outlet 1 Fluid",
-    MixtureNetwork,
-    SeparatorOutlet1Composition,
-    pressure=VolumeFluid.pressure,
-    temperature=VolumeFluid.temperature,
-)
-
-SeparatorOutlet2Fluid = FluidLookup(
-    "Separator Outlet 2 Fluid",
-    MixtureNetwork,
-    SeparatorOutlet2Composition,
-    pressure=VolumeFluid.pressure,
-    temperature=VolumeFluid.temperature,
-)
-
-# ------------------------------------------------------------------
-# Components after lookups
-# ------------------------------------------------------------------
-
-Inlet = DischargeCoefficient(
-    "Inlet",
-    MixtureNetwork,
-    upstream_pressure=SourceFluid.pressure,
-    downstream_pressure=VolumeFluid.pressure,
-    density=SourceFluid.density,
-    discharge_coefficient=1,
-    cross_sectional_area=A,
-)
-
-Separator = FlowSplitter(
-    "Separator",
-    MixtureNetwork,
-    pressure=VolumeFluid.pressure,
-    volume=1,
-    mass_flow_in=Inlet.mass_flow,
-    composition=VolumeFluid.composition,
-    composition_out1=SeparatorOutlet1Composition,
-    composition_out2=SeparatorOutlet2Composition,
-    total_enthalpy_in=SourceFluid.enthalpy,
-    enthalpy=VolumeFluid.enthalpy,
-    total_enthalpy_out1=SeparatorOutlet1Fluid.enthalpy,
-    total_enthalpy_out2=SeparatorOutlet2Fluid.enthalpy
-)
-
-Outlet1 = DischargeCoefficient(
-    "Outlet 1",
-    MixtureNetwork,
-    upstream_pressure=Separator.pressure,
-    downstream_pressure=101325,
-    density=SeparatorOutlet1Fluid.density,
-    discharge_coefficient=1,
-    cross_sectional_area=A / 4,
-    mass_flow=Separator.mass_flow_out1,
-)
-
-Outlet2 = DischargeCoefficient(
-    "Outlet 2",
-    MixtureNetwork,
-    upstream_pressure=Separator.pressure,
-    downstream_pressure=101325,
-    density=SeparatorOutlet2Fluid.density,
-    discharge_coefficient=1,
-    cross_sectional_area=A,
-    mass_flow=Separator.mass_flow_out2,
-)
-
-ArgonBalance = Balance(
-    "Argon Balance",
-    MixtureNetwork,
-    variable=Outlet1.discharge_coefficient,
-    function=Separator.composition_out2["Argon"],
-)
 
 
 # ------------------------------------------------------------------
-# Solve
+# RocketProps state model
 # ------------------------------------------------------------------
-
-F = Outlet1.discharge_coefficient + Outlet2.discharge_coefficient
-
-MixtureNetwork.track(
-    "Total Outlet Discharge Coefficient",
-    F,
-)
-
-solution = SteadyState(MixtureNetwork).solve(
-    return_type="dataframe",
-    verbose=True,
-    static=False,
-    print_solution=True,
-)
+# Propellant is not a full thermodynamic EOS package like Fluid or
+# IdealGas. Most RocketProps properties are functions of temperature
+# alone and are evaluated from saturated-liquid correlations.
+#
+# Temperature-only properties typically include:
+#     density
+#     specific_gravity
+#     viscosity
+#     kinematic_viscosity
+#     specific_heat
+#     thermal_conductivity
+#     prandtl
+#     surface_tension
+#     vapor_pressure
+#     saturation_pressure
+#     critical_pressure
+#     critical_temperature
+#     molecular_weight
+#
+# If pressure is not provided, the propellant is assumed to be a
+# saturated liquid at the specified temperature and:
+#
+#     pressure = None
+#
+# The saturation pressure can still be obtained from:
+#
+#     vapor_pressure
+#     saturation_pressure
+#
+# If pressure is provided, RocketProps can apply compressed-liquid
+# corrections for properties that depend on pressure. The pressure
+# must be greater than the saturation pressure at that temperature
+#
+# RocketProps does not provide a complete thermodynamic state and
+# therefore does not support quantities such as:
+#
+#     enthalpy
+#     internal_energy
+#     entropy
+#     gibbs_energy
+#     free_energy
+#     quality
+#
+# Those properties should instead be obtained from Fluid or IdealGas.
+# ------------------------------------------------------------------

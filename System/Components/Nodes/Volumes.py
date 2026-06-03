@@ -36,31 +36,6 @@ class SimpleVolume(Component):
         return [self.mass_flow_in.value - self.mass_flow_out.value]
 
 
-class IsothermalVolume(Component):
-
-    def __init__(self,
-                 name:str,
-                 network: Network,
-                 pressure: State,
-                 temperature: State,
-                 volume: float,
-                 density: State | None = None,
-                 enthalpy: State | None = None,
-                 mass_flow_in: State | None = None,
-                 mass_flow_out: State | None = None):
-        
-        self.setup()
-    
-    @property
-    def iteration_variables(self) -> list[State]:
-        return [self.pressure]
-
-    @property
-    def residuals(self) -> list[float]:
-        return [self.mass_flow_in.value - self.mass_flow_out.value]
-
-
-
 class Volume(Component):
     def __init__(
         self,

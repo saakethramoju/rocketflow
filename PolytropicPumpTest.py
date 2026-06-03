@@ -450,7 +450,7 @@ FuelPumpInlet = Volume(
     mass_flow_out=State((2.7 / 1000) * (50.8 * LBM_FT3_TO_KG_M3))
 )
 
-OxPumpInlet = IsothermalVolume(
+OxPumpInlet = SimpleVolume(
     "Ox Suction Inlet",
     PumpNetwork,
     pressure=OxPumpInletFluid.pressure,
