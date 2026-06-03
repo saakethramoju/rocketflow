@@ -368,13 +368,15 @@ class SteadyState:
             )
 
         return max_change
-    
+
+    # ------------------------------------------------------------------
+    # Model helpers
+    # ------------------------------------------------------------------
 
     def _get_model(self, model):
         """
         Return a Model object from either a Model instance or model name.
         """
-
         if model is None:
             return None
 
@@ -390,12 +392,94 @@ class SteadyState:
             f"Available models are {[m.name for m in self.network.model_list]}."
         )
 
+    def _build_unbuilt_models(self) -> None:
+        """
+        Build the first option for every unbuilt registered Model.
+        """
+        for model in self.network.model_list:
+            if model.active_component is None:
+                model.build()
+
+    def _next_fallback_model(self):
+        """
+        Return the first active Model that still has another option.
+        """
+        for model in self.network.model_list:
+            if model.has_next:
+                return model
+
+        return None
+
+    def _active_model_summary(self) -> str:
+        """
+        Return a compact summary of currently active model choices.
+        """
+        if not self.network.model_list:
+            return "<none>"
+
+        choices = []
+
+        for model in self.network.model_list:
+            option = model.active_option_name or "<unbuilt>"
+            choices.append(f"{model.name}={option}")
+
+        return ", ".join(choices)
+
+    def _record_model_failure(
+        self,
+        failures: list[dict],
+        error: Exception,
+        model=None,
+    ) -> None:
+        """
+        Store a concise model-attempt failure record for later printing.
+        """
+        failures.append({
+            "model": model.name if model is not None else "<network>",
+            "option": (
+                model.active_option_name
+                if model is not None
+                else self._active_model_summary()
+            ),
+            "error_type": type(error).__name__,
+            "error": str(error).splitlines()[0],
+        })
+
+    def _print_model_failures(self, failures: list[dict]) -> None:
+        """
+        Print model options that failed and were skipped.
+        """
+        if not failures:
+            return
+
+        table = Table(
+            title="Skipped Model Options",
+            box=box.SIMPLE_HEAVY,
+            show_header=True,
+            header_style="bold",
+        )
+
+        table.add_column("Model", style="#D84135", no_wrap=True)
+        table.add_column("Option", style="#fdf0d5", no_wrap=True)
+        table.add_column("Error Type", style="#3B629E", no_wrap=True)
+        table.add_column("Error")
+
+        for failure in failures:
+            table.add_row(
+                str(failure["model"]),
+                str(failure["option"]),
+                str(failure["error_type"]),
+                str(failure["error"]),
+            )
+
+        self.console.print()
+        self.console.print(table)
+        self.console.print()
 
     def _safe_sheet_name(self, name: str) -> str:
         """
         Return an Excel-safe worksheet name.
         """
-
         invalid_chars = ["\\", "/", "*", "[", "]", ":", "?"]
 
         for char in invalid_chars:
@@ -403,20 +487,18 @@ class SteadyState:
 
         return name[:31]
 
-
     def _save_model_option_results(
         self,
         results: dict,
         filename: str,
     ) -> None:
         """
-        Save static model-option evaluations.
+        Save successful model-option results.
 
-        For .xlsx/.xls, each model option is written to a separate sheet.
-        For .json, all model options are written as one keyed dictionary.
-        For .csv, each model option is written to a separate CSV file.
+        For .xlsx/.xls, each successful option is written to a separate sheet.
+        For .json, successful options are written as one keyed dictionary.
+        For .csv, each successful option is written to a separate CSV file.
         """
-
         ext = filename.split(".")[-1].lower()
         base = ".".join(filename.split(".")[:-1])
 
@@ -457,16 +539,56 @@ class SteadyState:
         raise ValueError(
             "Unsupported file extension. Use .csv, .json, or .xlsx"
         )
-        
-    def _build_unbuilt_models(self) -> None:
-        """
-        Build the first option for every unbuilt registered Model.
-        """
 
-        for model in self.network.model_list:
-            if model.active_component is None:
-                model.build()
+    def _format_records_for_return(
+        self,
+        records: list[dict],
+        return_type: str,
+    ):
+        """
+        Convert raw save records to the requested return type.
+        """
+        return_type = return_type.lower()
 
+        if return_type == "dict":
+            return records
+
+        if return_type == "dataframe":
+            import pandas as pd
+            return pd.DataFrame(records)
+
+        raise ValueError("return_type must be 'dict' or 'dataframe'")
+
+    # ------------------------------------------------------------------
+    # Static evaluation path
+    # ------------------------------------------------------------------
+
+    def _static_evaluate_once(
+        self,
+        filename: str | None = None,
+        return_type: str = "dict",
+        state_max_passes: int = 20,
+        state_tolerance: float = 1e-10,
+    ):
+        """
+        Evaluate the currently built network once without model fallback.
+        """
+        start_time = time.perf_counter()
+
+        self.network.pre_evaluation()
+        self.evaluate_network_states(
+            max_passes=state_max_passes,
+            tolerance=state_tolerance,
+        )
+
+        elapsed_time = time.perf_counter() - start_time
+
+        solution = self.network.save(
+            filename=filename,
+            return_type=return_type,
+        )
+
+        return solution, elapsed_time
 
     def static_evaluate(
         self,
@@ -481,16 +603,16 @@ class SteadyState:
         """
         Evaluate a network without nonlinear solving.
 
-        If model is None, the first option from every unbuilt Model is built
-        and the network is evaluated once.
+        If model is None, the first option for each registered Model is built
+        and the static evaluation is attempted. If evaluation fails, model
+        options are advanced until one network configuration evaluates
+        successfully.
 
-        If model is provided, every option in that Model is evaluated. The return
-        value is keyed by model option name. Printed output shows only the final
-        active option.
+        If model is provided, every option in that specific Model is evaluated.
+        Failed options are skipped. The returned result and optional file export
+        include only successful options. Terminal output shows skipped options
+        and the last successful option.
         """
-
-        start_time = time.perf_counter()
-
         selected_model = self._get_model(model)
 
         # --------------------------------------------------------------
@@ -498,56 +620,69 @@ class SteadyState:
         # --------------------------------------------------------------
         if selected_model is not None:
             results = {}
+            raw_results = {}
+            failures = []
+            last_success_option = None
+            last_elapsed_time = 0.0
 
             for option_name in selected_model.order:
-                # Replace the active model option before each evaluation.
                 selected_model.replace(option_name)
 
-                self.network.pre_evaluation()
-                self.evaluate_network_states(
-                    max_passes=state_max_passes,
-                    tolerance=state_tolerance,
-                )
+                try:
+                    _, last_elapsed_time = self._static_evaluate_once(
+                        filename=None,
+                        return_type="dict",
+                        state_max_passes=state_max_passes,
+                        state_tolerance=state_tolerance,
+                    )
 
-                # Always collect raw records first so file export is consistent.
+                except Exception as error:
+                    self._record_model_failure(
+                        failures,
+                        error,
+                        model=selected_model,
+                    )
+                    continue
+
                 records = self.network.save(
                     filename=None,
                     return_type="dict",
                 )
 
-                if return_type == "dict":
-                    results[option_name] = records
+                raw_results[option_name] = records
+                results[option_name] = self._format_records_for_return(
+                    records,
+                    return_type,
+                )
+                last_success_option = option_name
 
-                elif return_type == "dataframe":
-                    import pandas as pd
+            if last_success_option is None:
+                self._print_model_failures(failures)
+                raise RuntimeError(
+                    f"All options failed for model {selected_model.name!r}."
+                )
 
-                    results[option_name] = pd.DataFrame(records)
-
-                else:
-                    raise ValueError("return_type must be 'dict' or 'dataframe'")
-
-            elapsed_time = time.perf_counter() - start_time
+            # Leave the network in the last successful configuration so printed
+            # solution tables match the successful option, not a failed option.
+            selected_model.replace(last_success_option)
+            _, last_elapsed_time = self._static_evaluate_once(
+                filename=None,
+                return_type="dict",
+                state_max_passes=state_max_passes,
+                state_tolerance=state_tolerance,
+            )
 
             if filename is not None:
-                # File export always uses raw record dictionaries.
-                raw_results = {
-                    option_name: (
-                        result.to_dict(orient="records")
-                        if hasattr(result, "to_dict")
-                        else result
-                    )
-                    for option_name, result in results.items()
-                }
-
                 self._save_model_option_results(
                     raw_results,
                     filename,
                 )
 
-            # Print only the final active option.
+            self._print_model_failures(failures)
+
             if verbose:
                 self._verbose_static_print(
-                    elapsed_time=elapsed_time,
+                    elapsed_time=last_elapsed_time,
                 )
 
             if print_solution:
@@ -556,30 +691,39 @@ class SteadyState:
             return results
 
         # --------------------------------------------------------------
-        # Normal static evaluation.
+        # Normal static evaluation with model fallback.
         # --------------------------------------------------------------
-
-        # Static evaluation should include model components by default.
-        # If no model is specified, build the first option for every unbuilt model.
+        failures = []
         self._build_unbuilt_models()
 
-        self.network.pre_evaluation()
-        self.evaluate_network_states(
-            max_passes=state_max_passes,
-            tolerance=state_tolerance,
-        )
+        while True:
+            try:
+                solution, elapsed_time = self._static_evaluate_once(
+                    filename=filename,
+                    return_type=return_type,
+                    state_max_passes=state_max_passes,
+                    state_tolerance=state_tolerance,
+                )
+                break
 
-        elapsed_time = time.perf_counter() - start_time
+            except Exception as error:
+                self._record_model_failure(failures, error)
+                fallback_model = self._next_fallback_model()
+
+                if fallback_model is None:
+                    self._print_model_failures(failures)
+                    raise RuntimeError(
+                        "All model fallback options failed during static evaluation."
+                    ) from error
+
+                fallback_model.build_next()
+
+        self._print_model_failures(failures)
 
         if verbose:
             self._verbose_static_print(
                 elapsed_time=elapsed_time,
             )
-
-        solution = self.network.save(
-            filename=filename,
-            return_type=return_type,
-        )
 
         if print_solution:
             self.print_solution()
@@ -590,174 +734,18 @@ class SteadyState:
     # Main nonlinear solve
     # ------------------------------------------------------------------
 
-    def solve(
+    def _validate_solve_settings(
         self,
-        model: str | None = None,
-        filename: str | None = None,          # Optional file path/name for saving the exported solution.
-        return_type: str = "dict",            # Solution export format passed to network.save().
-        verbose: bool = False,                # If True, print solver summary, variables, and residuals.
-        static: bool = False,                 # If True, skip nonlinear solving and only evaluate the network.
-        print_solution: bool = False,         # If True, print the final exported network state table.
-        solver_method: str = "trf",           # scipy least_squares method: "trf", "dogbox", or "lm".
-        jacobian_method: str = "3-point",     # Finite-difference Jacobian method: "2-point" or "3-point".
-        ftol: float = 1e-8,                   # scipy cost-function termination tolerance.
-        xtol: float = 1e-8,                   # scipy solution-step termination tolerance.
-        gtol: float = 1e-8,                   # scipy gradient/optimality termination tolerance.
-        rtol: float = 1e-2,                   # Maximum acceptable final absolute residual.
-        state_max_passes: int = 20,           # Max derived-state settling passes per residual evaluation.
-        state_tolerance: float = 1e-10,       # Normalized derived-state settling tolerance.
-    ):
-
+        solver_method: str,
+        jacobian_method: str,
+        rtol: float,
+        state_max_passes: int,
+        state_tolerance: float,
+    ) -> tuple[str, str]:
         """
-        Solve the network's steady-state nonlinear system.
-
-        This method finds values for all iteration variables such that the
-        network residuals are driven to zero (or as close to zero as
-        possible within the requested tolerances).
-
-        The solve process is:
-
-            1. Run component pre-evaluation.
-            2. Collect all iteration variables.
-            3. Propagate derived states until the network settles.
-            4. Evaluate residuals.
-            5. Use scipy.optimize.least_squares() to solve the system.
-            6. Re-evaluate the network using the converged solution.
-            7. Export and optionally print the final results.
-
-        Parameters
-        ----------
-        filename : str | None, optional
-            Optional file path passed to network.save().
-
-        return_type : str, optional
-            Format returned by network.save().
-            Common options are "dict" and "dataframe".
-
-        verbose : bool, optional
-            If True, print detailed solver diagnostics including:
-
-                - convergence information
-                - solve time
-                - iteration variables
-                - variable adjustments
-                - residual values
-
-            Diagnostic information is also printed when the solve fails.
-
-        static : bool, optional
-            If True, skip nonlinear solving and perform only a network
-            evaluation using the current State values.
-
-        print_solution : bool, optional
-            If True, print the final exported network solution table.
-
-        solver_method : str, optional
-            scipy.optimize.least_squares() algorithm.
-
-            Supported options:
-
-                "trf"     Trust Region Reflective (recommended)
-                "dogbox"  Dogleg trust region
-                "lm"      Levenberg-Marquardt
-
-        jacobian_method : str, optional
-            Finite-difference Jacobian approximation.
-
-            Supported options:
-
-                "2-point"  Faster
-                "3-point"  More accurate
-
-        ftol : float, optional
-            Cost-function convergence tolerance passed to scipy.
-
-        xtol : float, optional
-            Iteration-variable convergence tolerance passed to scipy.
-
-        gtol : float, optional
-            Gradient/optimality convergence tolerance passed to scipy.
-
-        rtol : float, optional
-            Maximum acceptable absolute residual after convergence.
-
-            The solve is considered unsuccessful if:
-
-                max(abs(residual)) > rtol
-
-            even if scipy reports convergence.
-
-        state_max_passes : int, optional
-            Maximum number of state-settling passes performed during each
-            residual evaluation.
-
-            Higher values may improve convergence for strongly coupled
-            networks but increase solve time.
-
-        state_tolerance : float, optional
-            Normalized convergence tolerance used by the state-settling
-            algorithm.
-
-            Smaller values enforce tighter consistency between derived
-            states but increase solve time.
-
-        Returns
-        -------
-        Any
-            Result returned by network.save(return_type=...).
-
-        Raises
-        ------
-        ValueError
-            If solver settings are invalid or the system is underdetermined.
-
-        RuntimeError
-            If the nonlinear solve fails, encounters an invalid network
-            state, or converges to residuals larger than rtol.
-
-        Notes
-        -----
-        This solver supports:
-
-            - user-defined components
-            - user-defined balances
-            - overdetermined systems
-            - variable bounds
-            - derived-state propagation
-            - order-independent component evaluation
-
-        The reported "Variable Adjustment" is:
-
-            x_final - x_initial
-
-        and the reported "Normalized Variable Adjustment" is:
-
-            abs(x_final - x_initial) / max(abs(x_final), 1)
-
-        which indicates how far each iteration variable moved from its
-        initial guess during the solve.
+        Validate solve settings and return normalized method names.
         """
-
-        # Store state-settling controls for residual(), since scipy only calls
-        # residual(x) and does not pass solve() keyword arguments through.
-        self._state_max_passes = state_max_passes
-        self._state_tolerance = state_tolerance
-
-        # Static mode skips nonlinear solving.
-        if static:
-            return self.static_evaluate(
-                filename=filename,
-                return_type=return_type,
-                verbose=verbose,
-                print_solution=print_solution,
-                state_max_passes=state_max_passes,
-                state_tolerance=state_tolerance,
-                model=model,
-            )
-
-        # Validate selected least_squares method.
         method = solver_method.lower()
-
         valid_solver_methods = ("trf", "dogbox", "lm")
 
         if method not in valid_solver_methods:
@@ -767,9 +755,7 @@ class SteadyState:
                 f"Got '{solver_method}'."
             )
 
-        # Validate selected finite-difference Jacobian method.
         jac = jacobian_method.lower()
-
         valid_jac_methods = ("2-point", "3-point")
 
         if jac not in valid_jac_methods:
@@ -779,14 +765,12 @@ class SteadyState:
                 f"Got '{jacobian_method}'."
             )
 
-        # Validate residual acceptance tolerance.
         if rtol <= 0.0:
             raise ValueError(
                 f"Residual tolerance (rtol) must be positive. "
                 f"Got {rtol}"
             )
 
-        # Validate state-settling controls.
         if state_max_passes <= 0:
             raise ValueError(
                 f"state_max_passes must be positive. "
@@ -798,6 +782,37 @@ class SteadyState:
                 f"state_tolerance must be positive. "
                 f"Got {state_tolerance}"
             )
+
+        return method, jac
+
+    def _solve_once(
+        self,
+        filename: str | None = None,
+        return_type: str = "dict",
+        solver_method: str = "trf",
+        jacobian_method: str = "3-point",
+        ftol: float = 1e-8,
+        xtol: float = 1e-8,
+        gtol: float = 1e-8,
+        rtol: float = 1e-2,
+        state_max_passes: int = 20,
+        state_tolerance: float = 1e-10,
+    ):
+        """
+        Solve the currently built network once without model fallback.
+        """
+        method, jac = self._validate_solve_settings(
+            solver_method=solver_method,
+            jacobian_method=jacobian_method,
+            rtol=rtol,
+            state_max_passes=state_max_passes,
+            state_tolerance=state_tolerance,
+        )
+
+        # Store state-settling controls for residual(), since scipy only calls
+        # residual(x) and does not pass solve() keyword arguments through.
+        self._state_max_passes = state_max_passes
+        self._state_tolerance = state_tolerance
 
         # One-time component setup.
         self.network.pre_evaluation()
@@ -819,19 +834,21 @@ class SteadyState:
             dtype=float,
         )
 
-        # If there is nothing to solve, just export current network state.
+        # If there is nothing to solve, use the static path.
         no_iteration_variables = len(x0) == 0
         no_residuals = len(r0) == 0
 
         if no_iteration_variables and no_residuals:
-            return self.static_evaluate(
+            solution, elapsed_time = self._static_evaluate_once(
                 filename=filename,
                 return_type=return_type,
-                verbose=verbose,
-                print_solution=print_solution,
                 state_max_passes=state_max_passes,
                 state_tolerance=state_tolerance,
             )
+            self._last_success_kind = "static"
+            self._last_static_elapsed_time = elapsed_time
+            self._last_solve_diagnostics = None
+            return solution
 
         # least_squares requires at least as many residuals as unknowns.
         if len(r0) < len(x0):
@@ -851,11 +868,9 @@ class SteadyState:
             self.network.keep_feasible,
         )
 
-        # start timing
         start_time = time.perf_counter()
 
         try:
-            # Main nonlinear solve.
             sol = least_squares(
                 fun=self.residual,
                 x0=x0,
@@ -869,50 +884,16 @@ class SteadyState:
             )
 
         except Exception:
-            elapsed_time = time.perf_counter() - start_time
-
-            if verbose:
-                self._verbose_failure_print(
-                    x0=x0,
-                    method=method,
-                    jac=jac,
-                    ftol=ftol,
-                    xtol=xtol,
-                    gtol=gtol,
-                    rtol=rtol,
-                    overconstrained=overconstrained,
-                    elapsed_time=elapsed_time,
-                )
-
             raise
 
-        # end time
         elapsed_time = time.perf_counter() - start_time
 
-        # Check final residual quality.
         final_residual = np.array(
             sol.fun,
             dtype=float,
         )
 
         max_residual = np.max(np.abs(final_residual))
-
-        # Optional rich solver summary.
-        # This is intentionally printed before the residual-quality failure
-        # check so verbose=True still reports failed convergences.
-        if verbose:
-            self._verbose_print(
-                sol=sol,
-                x0=x0,
-                method=method,
-                jac=jac,
-                ftol=ftol,
-                xtol=xtol,
-                gtol=gtol,
-                rtol=rtol,
-                overconstrained=overconstrained,
-                elapsed_time=elapsed_time,
-            )
 
         if (
             not sol.success
@@ -938,17 +919,212 @@ class SteadyState:
             tolerance=state_tolerance,
         )
 
-        # Save/export final solution.
         solution = self.network.save(
             filename=filename,
             return_type=return_type,
         )
 
-        if print_solution:
-            self.print_solution()
+        self._last_success_kind = "solve"
+        self._last_static_elapsed_time = None
+        self._last_solve_diagnostics = {
+            "sol": sol,
+            "x0": x0,
+            "method": method,
+            "jac": jac,
+            "ftol": ftol,
+            "xtol": xtol,
+            "gtol": gtol,
+            "rtol": rtol,
+            "overconstrained": overconstrained,
+            "elapsed_time": elapsed_time,
+        }
 
         return solution
 
+    def _print_last_success(self, verbose: bool, print_solution: bool) -> None:
+        """
+        Print diagnostics for the last successful static evaluation or solve.
+        """
+        if verbose:
+            if getattr(self, "_last_success_kind", None) == "static":
+                self._verbose_static_print(
+                    elapsed_time=self._last_static_elapsed_time,
+                )
+
+            elif getattr(self, "_last_success_kind", None) == "solve":
+                diagnostics = self._last_solve_diagnostics
+                self._verbose_print(**diagnostics)
+
+        if print_solution:
+            self.print_solution()
+
+    def solve(
+        self,
+        model: str | None = None,
+        filename: str | None = None,
+        return_type: str = "dict",
+        verbose: bool = False,
+        static: bool = False,
+        print_solution: bool = False,
+        solver_method: str = "trf",
+        jacobian_method: str = "3-point",
+        ftol: float = 1e-8,
+        xtol: float = 1e-8,
+        gtol: float = 1e-8,
+        rtol: float = 1e-2,
+        state_max_passes: int = 20,
+        state_tolerance: float = 1e-10,
+    ):
+        """
+        Solve the network's steady-state nonlinear system.
+
+        If static=True, this delegates to static_evaluate().
+
+        If model is None, registered Models are treated as fallback choices.
+        The solver tries the currently active/default model options, advances
+        model options after failures, and exports only the successful result.
+
+        If model is provided, every option in that specific Model is attempted.
+        Failed options are skipped. The returned result and optional file export
+        include only successful options. Terminal output shows skipped options
+        and the last successful option.
+        """
+        if static:
+            return self.static_evaluate(
+                model=model,
+                filename=filename,
+                return_type=return_type,
+                verbose=verbose,
+                print_solution=print_solution,
+                state_max_passes=state_max_passes,
+                state_tolerance=state_tolerance,
+            )
+
+        selected_model = self._get_model(model)
+
+        # --------------------------------------------------------------
+        # Attempt every option in one requested Model.
+        # --------------------------------------------------------------
+        if selected_model is not None:
+            results = {}
+            raw_results = {}
+            failures = []
+            last_success_option = None
+
+            for option_name in selected_model.order:
+                selected_model.replace(option_name)
+
+                try:
+                    self._solve_once(
+                        filename=None,
+                        return_type=return_type,
+                        solver_method=solver_method,
+                        jacobian_method=jacobian_method,
+                        ftol=ftol,
+                        xtol=xtol,
+                        gtol=gtol,
+                        rtol=rtol,
+                        state_max_passes=state_max_passes,
+                        state_tolerance=state_tolerance,
+                    )
+
+                except Exception as error:
+                    self._record_model_failure(
+                        failures,
+                        error,
+                        model=selected_model,
+                    )
+                    continue
+
+                records = self.network.save(
+                    filename=None,
+                    return_type="dict",
+                )
+
+                raw_results[option_name] = records
+                results[option_name] = self._format_records_for_return(
+                    records,
+                    return_type,
+                )
+                last_success_option = option_name
+
+            if last_success_option is None:
+                self._print_model_failures(failures)
+                raise RuntimeError(
+                    f"All options failed for model {selected_model.name!r}."
+                )
+
+            # Re-run the last successful option so terminal output and network
+            # state correspond to the final successful configuration.
+            selected_model.replace(last_success_option)
+            self._solve_once(
+                filename=None,
+                return_type=return_type,
+                solver_method=solver_method,
+                jacobian_method=jacobian_method,
+                ftol=ftol,
+                xtol=xtol,
+                gtol=gtol,
+                rtol=rtol,
+                state_max_passes=state_max_passes,
+                state_tolerance=state_tolerance,
+            )
+
+            if filename is not None:
+                self._save_model_option_results(
+                    raw_results,
+                    filename,
+                )
+
+            self._print_model_failures(failures)
+            self._print_last_success(
+                verbose=verbose,
+                print_solution=print_solution,
+            )
+
+            return results
+
+        # --------------------------------------------------------------
+        # Normal solve with model fallback.
+        # --------------------------------------------------------------
+        failures = []
+        self._build_unbuilt_models()
+
+        while True:
+            try:
+                solution = self._solve_once(
+                    filename=filename,
+                    return_type=return_type,
+                    solver_method=solver_method,
+                    jacobian_method=jacobian_method,
+                    ftol=ftol,
+                    xtol=xtol,
+                    gtol=gtol,
+                    rtol=rtol,
+                    state_max_passes=state_max_passes,
+                    state_tolerance=state_tolerance,
+                )
+                break
+
+            except Exception as error:
+                self._record_model_failure(failures, error)
+                fallback_model = self._next_fallback_model()
+
+                if fallback_model is None:
+                    self._print_model_failures(failures)
+                    raise RuntimeError(
+                        "All model fallback options failed during steady-state solve."
+                    ) from error
+
+                fallback_model.build_next()
+
+        self._print_model_failures(failures)
+        self._print_last_success(
+            verbose=verbose,
+            print_solution=print_solution,
+        )
+
+        return solution
     # ------------------------------------------------------------------
     # Solution printing
     # ------------------------------------------------------------------

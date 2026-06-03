@@ -89,9 +89,8 @@ Outlet1 = Model(
 
 
 results = SteadyState(ModelNetwork).solve(
-    static=True,
-    #model="Outlet 1",
+    model="Outlet 1",
     verbose=True,
     print_solution=True,
-    filename="test.json"
+    filename="test.xlsx"
 )
