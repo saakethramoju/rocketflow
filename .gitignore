@@ -99,3 +99,4 @@ Utilities/.DS_Store
 .DS_Store
 System/__pycache__/Model.cpython-313.pyc
 .DS_Store
+System/Components/Fluids/__pycache__/PropellantLookups.cpython-313.pyc
