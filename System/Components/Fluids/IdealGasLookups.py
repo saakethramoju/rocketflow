@@ -19,6 +19,25 @@ FluidInput = str | dict[str, State | float] | Composition
 class IdealGasLookup(Component):
     """
     PYroMat-backed ideal-gas property lookup component.
+
+    Reference handling
+    ------------------
+    If the same species or mixture can also be initialized by the CoolProp-backed
+    Fluid wrapper, this lookup shifts PYroMat ideal-gas properties onto the
+    Fluid reference basis at:
+
+        T_ref = 298.15 K
+        P_ref = 101325 Pa
+
+    The adjusted properties are:
+        enthalpy
+        internal_energy
+        entropy
+        gibbs_energy
+        free_energy
+
+    If the species or mixture is not available in CoolProp, no reference shift is
+    applied and the values are returned directly from PYroMat.
     """
 
     _REFERENCE_TEMPERATURE = 298.15
@@ -95,8 +114,10 @@ class IdealGasLookup(Component):
         self._coolprop_fluid = None
         self._pyromat_fluid = None
 
+        self._reference_adjustment_available = False
         self._reference_enthalpy = None
         self._reference_internal_energy = None
+        self._reference_entropy = None
         self._reference_IdealGas = None
         self._IdealGas = None
 
@@ -239,7 +260,6 @@ class IdealGasLookup(Component):
     def pre_evaluation(self):
         self.evaluate_states()
 
-
     def evaluate_states(self) -> None:
         if not self._ensure_backend_initialized():
             return
@@ -271,7 +291,6 @@ class IdealGasLookup(Component):
                 prop_name
             )
 
-
     def __getattr__(self, name: str) -> State:
 
         if "_IdealGas" not in self.__dict__:
@@ -290,18 +309,9 @@ class IdealGasLookup(Component):
         return self._property_states[name]
 
     def _initialize_backend(self) -> None:
+        """Create the PYroMat backend and optional CoolProp reference state."""
         self._coolprop_fluid = self._coolprop_argument_from_composition()
         self._pyromat_fluid = self._pyromat_argument_from_composition()
-
-        reference_fluid = Fluid(
-            self._coolprop_fluid,
-            basis="mass",
-            pressure=self._REFERENCE_PRESSURE,
-            temperature=self._REFERENCE_TEMPERATURE,
-        )
-
-        self._reference_enthalpy = reference_fluid.enthalpy
-        self._reference_internal_energy = reference_fluid.internal_energy
 
         self._reference_IdealGas = IdealGas(
             self._pyromat_fluid,
@@ -309,6 +319,8 @@ class IdealGasLookup(Component):
             pressure=self._REFERENCE_PRESSURE,
             temperature=self._REFERENCE_TEMPERATURE,
         )
+
+        self._update_reference_adjustment()
 
         self._IdealGas = IdealGas(
             self._pyromat_fluid,
@@ -324,6 +336,36 @@ class IdealGasLookup(Component):
 
         self._last_flash_values = None
         self._property_cache.clear()
+
+    def _update_reference_adjustment(self) -> None:
+        """
+        Update CoolProp-to-PYroMat reference offsets.
+
+        If CoolProp cannot initialize the current ideal-gas composition, reference
+        adjustment is disabled and PYroMat values are returned directly.
+        """
+        self._reference_adjustment_available = False
+        self._reference_enthalpy = None
+        self._reference_internal_energy = None
+        self._reference_entropy = None
+
+        try:
+            reference_fluid = Fluid(
+                self._coolprop_fluid,
+                basis="mass",
+                pressure=self._REFERENCE_PRESSURE,
+                temperature=self._REFERENCE_TEMPERATURE,
+            )
+
+            self._reference_enthalpy = reference_fluid.enthalpy
+            self._reference_internal_energy = reference_fluid.internal_energy
+            self._reference_entropy = reference_fluid.entropy
+            self._reference_adjustment_available = True
+
+        except Exception:
+            # Not all PYroMat gases are available in CoolProp.
+            # In that case, leave the ideal-gas values on the PYroMat basis.
+            self._reference_adjustment_available = False
 
     def _ensure_backend_initialized(self) -> bool:
         if self._IdealGas is not None:
@@ -447,6 +489,10 @@ class IdealGasLookup(Component):
         )
 
     def _to_ideal_basis(self, name: str, value: float) -> float:
+        """Convert an externally supplied value into the PYroMat basis."""
+        if not self._reference_adjustment_available:
+            return float(value)
+
         if name == "enthalpy":
             return (
                 self._reference_IdealGas.enthalpy
@@ -461,21 +507,56 @@ class IdealGasLookup(Component):
                 - self._reference_internal_energy
             )
 
+        if name == "entropy":
+            return (
+                self._reference_IdealGas.entropy
+                + float(value)
+                - self._reference_entropy
+            )
+
         return float(value)
 
     def _from_ideal_basis(self, name: str, value: float) -> float:
+        """Convert a PYroMat property value into the Fluid reference basis."""
+        if not self._reference_adjustment_available:
+            return float(value)
+
+        enthalpy_offset = (
+            self._reference_enthalpy
+            - self._reference_IdealGas.enthalpy
+        )
+
+        internal_energy_offset = (
+            self._reference_internal_energy
+            - self._reference_IdealGas.internal_energy
+        )
+
+        entropy_offset = (
+            self._reference_entropy
+            - self._reference_IdealGas.entropy
+        )
+
         if name == "enthalpy":
-            return (
-                self._reference_enthalpy
-                + float(value)
-                - self._reference_IdealGas.enthalpy
-            )
+            return float(value) + enthalpy_offset
 
         if name == "internal_energy":
+            return float(value) + internal_energy_offset
+
+        if name == "entropy":
+            return float(value) + entropy_offset
+
+        if name == "gibbs_energy":
             return (
-                self._reference_internal_energy
-                + float(value)
-                - self._reference_IdealGas.internal_energy
+                float(value)
+                + enthalpy_offset
+                - self._IdealGas.temperature * entropy_offset
+            )
+
+        if name == "free_energy":
+            return (
+                float(value)
+                + internal_energy_offset
+                - self._IdealGas.temperature * entropy_offset
             )
 
         return float(value)
@@ -570,7 +651,6 @@ class IdealGasLookup(Component):
             )
         )
 
-
     def _set_ideal_gas_from_composition(self) -> None:
 
         composition_values = self._composition_values()
@@ -589,7 +669,9 @@ class IdealGasLookup(Component):
         new_coolprop_fluid = self._coolprop_argument_from_composition()
         new_pyromat_fluid = self._pyromat_argument_from_composition()
 
-        # Species set changed, so rebuild the ideal-gas and reference backends.
+        # Species set or fractions changed, so rebuild the ideal-gas and
+        # reference backends. If CoolProp cannot initialize this composition,
+        # the rebuilt lookup remains on the PYroMat reference basis.
         if (
             new_coolprop_fluid != self._coolprop_fluid
             or new_pyromat_fluid != self._pyromat_fluid
@@ -601,20 +683,11 @@ class IdealGasLookup(Component):
             self._property_cache.clear()
             return
 
-        # Same species set, only fractions changed.
+        # Same species set and same fractions.
         if len(composition_values) > 1:
             self._IdealGas.mass_fractions = list(composition_values)
             self._reference_IdealGas.mass_fractions = list(composition_values)
-
-            reference_fluid = Fluid(
-                self._coolprop_fluid,
-                basis="mass",
-                pressure=self._REFERENCE_PRESSURE,
-                temperature=self._REFERENCE_TEMPERATURE,
-            )
-
-            self._reference_enthalpy = reference_fluid.enthalpy
-            self._reference_internal_energy = reference_fluid.internal_energy
+            self._update_reference_adjustment()
 
         self._last_composition_values = composition_values
         self._last_flash_values = None
@@ -637,10 +710,14 @@ class IdealGasLookup(Component):
             "_coolprop_fluid",
             "pyromat_fluid",
             "_pyromat_fluid",
+            "reference_adjustment_available",
+            "_reference_adjustment_available",
             "reference_enthalpy",
             "_reference_enthalpy",
             "reference_internal_energy",
             "_reference_internal_energy",
+            "reference_entropy",
+            "_reference_entropy",
             "input_map",
             "_input_map",
             "last_flash_values",
