@@ -431,3 +431,72 @@ SteadyState(PumpNetwork).solve(
     evaluate_all_model_options=True
 )
 '''
+
+
+
+
+# ------------------------------------------------------------------
+# Why did the version with TurboMap inside each ModelOption work?
+#
+# Nothing was physically different. The difference was that each pump
+# model option was completely self-contained and internally consistent.
+#
+# With TurboMap inside the ModelOption:
+#
+#     constant_density option
+#
+#         volumetric_flow
+#               ↓
+#           TurboMap
+#               ↓
+#      head_rise, torque
+#               ↓
+#     ConstantDensityPump
+#
+#     polytropic option
+#
+#           mass_flow
+#               ↓
+#      mass_flow / density
+#               ↓
+#           TurboMap
+#               ↓
+#      head_rise, torque
+#               ↓
+#        PolytropicPump
+#
+# Each option had its own TurboMap driven by the flow variable used by
+# that specific pump model. Switching options also switched the map,
+# head rise, torque, and all supporting states together.
+#
+# When TurboMap is moved outside the Model:
+#
+#                    PumpMap
+#                       ↑
+#                ConstantPumpFlow
+#                       │
+#            ┌──────────┴──────────┐
+#            │                     │
+#     ConstantDensityPump    PolytropicPump
+#
+# The map is driven by ConstantPumpFlow, but the PolytropicPump is
+# driven by PolyPumpMassFlow. This means the map operating point is no
+# longer tied to the pump operating point when the polytropic option is
+# selected.
+#
+# Physically, the shared external TurboMap is the preferred long-term
+# architecture because both pump models represent the same hardware and
+# should use the same pump curves. However, for this to work cleanly,
+# all pump model options should use the same independent flow variable
+# (either mass flow or volumetric flow).
+#
+# The fact that the internal-map version worked better is a sign that
+# ConstantDensityPump and PolytropicPump are not yet fully
+# interchangeable from an API perspective:
+#
+#     ConstantDensityPump -> volumetric_flow
+#     PolytropicPump      -> mass_flow
+#
+# Once both models use the same flow variable, a shared external
+# TurboMap becomes naturally consistent and physically correct.
+# ------------------------------------------------------------------
