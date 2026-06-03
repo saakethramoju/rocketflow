@@ -6,6 +6,7 @@ import inspect
 
 from .State import State
 from .Composition import Composition
+from .Model import ModelOption
 
 if TYPE_CHECKING:
     from System import Network
@@ -110,6 +111,16 @@ class Component(ABC):
         self.name = name
         self.network = network
         self.network.add_component(component=self)
+
+
+    @classmethod
+    def model(cls, name: str | None = None, **kwargs):
+
+        return ModelOption(
+            name=name or cls.__name__,
+            component_class=cls,
+            kwargs=kwargs,
+        )
 
     #@abstractmethod
     def pre_evaluation(self) -> None:
