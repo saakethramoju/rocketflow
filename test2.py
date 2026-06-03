@@ -26,10 +26,48 @@ DarcyOption = DischargeCoefficient.model(
     cross_sectional_area=A / 4,
 )
 
-DarcyComponent = DarcyOption.build(
-    "Outlet 1",
-    ModelNetwork,
+CompressibleOption = CompressibleFlowTube.model(
+    "compressible",
+    mass_flow=State(1.0),
+    upstream_static_pressure=SourceFluid.pressure,
+    upstream_static_temperature=SourceFluid.temperature,
+    upstream_density=SourceFluid.density,
+    downstream_static_pressure=101325,
+    downstream_static_temperature=SourceFluid.temperature,
+    downstream_density=SourceFluid.density,
+    length=1,
+    inner_diameter=D,
+    friction_factor=0.02,
+    upstream_static_enthalpy=SourceFluid.enthalpy,
+    upstream_speed_of_sound=SourceFluid.speed_of_sound,
+    specific_heat_ratio=SourceFluid.specific_heat_ratio,
 )
 
-print(DarcyComponent)
-print(ModelNetwork.components)
+Outlet1 = Model(
+    "Outlet 1",
+    ModelNetwork,
+    components=[
+        DarcyOption,
+        CompressibleOption,
+    ],
+    order=[
+        "darcy",
+        "compressible",
+    ],
+)
+
+
+Outlet1.build("darcy")
+
+try:
+    raise RuntimeError("fake darcy failure")
+
+except Exception as e:
+    print(f"{Outlet1.active_option} failed: {e}")
+
+    Outlet1.build_next()
+
+    SteadyState(ModelNetwork).solve(
+        verbose=True,
+        print_solution=True,
+    )

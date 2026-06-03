@@ -34,6 +34,24 @@ class Network:
         """Register a component with the network."""
         self.component_list.append(component)
 
+
+    def remove_component(self, component: Component) -> None:
+        """
+        Remove a component from the network.
+
+        This is mainly used by Model when replacing one active component
+        implementation with another.
+        """
+
+        if component not in self.component_list:
+            raise ValueError(
+                f"Component {component.name!r} is not registered "
+                f"with network {self.name!r}."
+            )
+
+        self.component_list.remove(component)
+
+
     def add_balance(self, balance: Balance) -> None:
         """Register an algebraic balance with the network."""
         self.balance_list.append(balance)
