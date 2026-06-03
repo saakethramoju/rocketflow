@@ -368,13 +368,109 @@ class SteadyState:
             )
 
         return max_change
+    
 
-    # ------------------------------------------------------------------
-    # Static evaluation path
-    # ------------------------------------------------------------------
+    def _get_model(self, model):
+        """
+        Return a Model object from either a Model instance or model name.
+        """
+
+        if model is None:
+            return None
+
+        if hasattr(model, "build") and hasattr(model, "available_options"):
+            return model
+
+        for candidate in self.network.model_list:
+            if candidate.name == model:
+                return candidate
+
+        raise ValueError(
+            f"Unknown model {model!r}. "
+            f"Available models are {[m.name for m in self.network.model_list]}."
+        )
+
+
+    def _safe_sheet_name(self, name: str) -> str:
+        """
+        Return an Excel-safe worksheet name.
+        """
+
+        invalid_chars = ["\\", "/", "*", "[", "]", ":", "?"]
+
+        for char in invalid_chars:
+            name = name.replace(char, "_")
+
+        return name[:31]
+
+
+    def _save_model_option_results(
+        self,
+        results: dict,
+        filename: str,
+    ) -> None:
+        """
+        Save static model-option evaluations.
+
+        For .xlsx/.xls, each model option is written to a separate sheet.
+        For .json, all model options are written as one keyed dictionary.
+        For .csv, each model option is written to a separate CSV file.
+        """
+
+        ext = filename.split(".")[-1].lower()
+        base = ".".join(filename.split(".")[:-1])
+
+        if ext == "json":
+            import json
+
+            with open(filename, "w") as f:
+                json.dump(results, f, indent=4)
+
+            return
+
+        if ext in {"xlsx", "xls"}:
+            import pandas as pd
+
+            with pd.ExcelWriter(filename) as writer:
+                for option_name, records in results.items():
+                    df = pd.DataFrame(records)
+                    df.to_excel(
+                        writer,
+                        sheet_name=self._safe_sheet_name(option_name),
+                        index=False,
+                    )
+
+            return
+
+        if ext == "csv":
+            import pandas as pd
+
+            for option_name, records in results.items():
+                df = pd.DataFrame(records)
+                df.to_csv(
+                    f"{base}_{option_name}.csv",
+                    index=False,
+                )
+
+            return
+
+        raise ValueError(
+            "Unsupported file extension. Use .csv, .json, or .xlsx"
+        )
+        
+    def _build_unbuilt_models(self) -> None:
+        """
+        Build the first option for every unbuilt registered Model.
+        """
+
+        for model in self.network.model_list:
+            if model.active_component is None:
+                model.build()
+
 
     def static_evaluate(
         self,
+        model: str | None = None,
         filename: str | None = None,
         return_type: str = "dict",
         verbose: bool = False,
@@ -385,10 +481,87 @@ class SteadyState:
         """
         Evaluate a network without nonlinear solving.
 
-        This still uses steady-state state-settling so component order is less
-        important even for static evaluations.
+        If model is None, the first option from every unbuilt Model is built
+        and the network is evaluated once.
+
+        If model is provided, every option in that Model is evaluated. The return
+        value is keyed by model option name. Printed output shows only the final
+        active option.
         """
+
         start_time = time.perf_counter()
+
+        selected_model = self._get_model(model)
+
+        # --------------------------------------------------------------
+        # Evaluate every option in one requested Model.
+        # --------------------------------------------------------------
+        if selected_model is not None:
+            results = {}
+
+            for option_name in selected_model.order:
+                # Replace the active model option before each evaluation.
+                selected_model.replace(option_name)
+
+                self.network.pre_evaluation()
+                self.evaluate_network_states(
+                    max_passes=state_max_passes,
+                    tolerance=state_tolerance,
+                )
+
+                # Always collect raw records first so file export is consistent.
+                records = self.network.save(
+                    filename=None,
+                    return_type="dict",
+                )
+
+                if return_type == "dict":
+                    results[option_name] = records
+
+                elif return_type == "dataframe":
+                    import pandas as pd
+
+                    results[option_name] = pd.DataFrame(records)
+
+                else:
+                    raise ValueError("return_type must be 'dict' or 'dataframe'")
+
+            elapsed_time = time.perf_counter() - start_time
+
+            if filename is not None:
+                # File export always uses raw record dictionaries.
+                raw_results = {
+                    option_name: (
+                        result.to_dict(orient="records")
+                        if hasattr(result, "to_dict")
+                        else result
+                    )
+                    for option_name, result in results.items()
+                }
+
+                self._save_model_option_results(
+                    raw_results,
+                    filename,
+                )
+
+            # Print only the final active option.
+            if verbose:
+                self._verbose_static_print(
+                    elapsed_time=elapsed_time,
+                )
+
+            if print_solution:
+                self.print_solution()
+
+            return results
+
+        # --------------------------------------------------------------
+        # Normal static evaluation.
+        # --------------------------------------------------------------
+
+        # Static evaluation should include model components by default.
+        # If no model is specified, build the first option for every unbuilt model.
+        self._build_unbuilt_models()
 
         self.network.pre_evaluation()
         self.evaluate_network_states(
@@ -419,6 +592,7 @@ class SteadyState:
 
     def solve(
         self,
+        model: str | None = None,
         filename: str | None = None,          # Optional file path/name for saving the exported solution.
         return_type: str = "dict",            # Solution export format passed to network.save().
         verbose: bool = False,                # If True, print solver summary, variables, and residuals.
@@ -578,6 +752,7 @@ class SteadyState:
                 print_solution=print_solution,
                 state_max_passes=state_max_passes,
                 state_tolerance=state_tolerance,
+                model=model,
             )
 
         # Validate selected least_squares method.

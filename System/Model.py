@@ -184,6 +184,9 @@ class Model:
         self.active_option_name = None
         self.active_component = None
 
+        # Register this model with the network so solvers can find it.
+        self.network.add_model(self)
+
     def _validate(self) -> None:
         """
         Validate component names and order entries.
@@ -268,10 +271,13 @@ class Model:
     ):
         """
         Replace the active option with another option.
+
+        If no option is active yet, this simply builds the requested option.
         """
 
         self.clear()
         return self.build(option_name)
+
 
     def next(self) -> str:
         """
