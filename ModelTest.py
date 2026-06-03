@@ -4,6 +4,51 @@ from Solvers import *
 from constants import *
 
 
+
+def solve_with_model_fallback(
+    network,
+    models: list,
+    solver_class,
+    **solve_kwargs,
+):
+    """
+    Try solving a network while advancing model options after failures.
+
+    This function assumes each Model has already been built or can build its
+    first option. If the solve fails, the first Model with another available
+    option is advanced and the solve is tried again.
+    """
+
+    # Build any unbuilt models using their first option.
+    for model in models:
+        if model.active_component is None:
+            model.build()
+
+    while True:
+        try:
+            return solver_class(network).solve(**solve_kwargs)
+
+        except Exception as error:
+            # Find the first model that still has another option.
+            fallback_model = next(
+                (model for model in models if model.has_next),
+                None,
+            )
+
+            if fallback_model is None:
+                raise RuntimeError(
+                    "All model fallback options failed."
+                ) from error
+
+            print(
+                f"{fallback_model.name}: "
+                f"{fallback_model.active_option} failed. "
+                f"Trying {fallback_model.next()}."
+            )
+
+            fallback_model.build_next()
+
+
 ModelNetwork = Network("Model Network")
 
 D = 3 * IN_TO_M
@@ -87,29 +132,13 @@ Outlet1 = Model(
     ],
 )
 
-# ------------------------------------------------------------------
-# Manual fallback test
-# ------------------------------------------------------------------
 
-Outlet1.build("darcy")
-
-print(ModelNetwork.components)
-
-try:
-
-    SteadyState(ModelNetwork).solve(
-        verbose=True,
-        print_solution=True,
-    )
-
-except Exception as e:
-    print(f"{Outlet1.active_option} failed: {e}")
-
-    Outlet1.build_next()
-
-    print(ModelNetwork.components)
-
-    SteadyState(ModelNetwork).solve(
-        verbose=True,
-        print_solution=True,
-    )
+solution = solve_with_model_fallback(
+    ModelNetwork,
+    models=[
+        Outlet1,
+    ],
+    solver_class=SteadyState,
+    verbose=True,
+    print_solution=True,
+)

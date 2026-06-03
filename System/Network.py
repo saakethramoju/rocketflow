@@ -25,6 +25,7 @@ class Network:
         self.component_list = []
         self.balance_list = []
         self.tracked_state_list = []
+        self.model_list = []
 
     # ------------------------------------------------------------------
     # Registration
@@ -56,6 +57,17 @@ class Network:
         """Register an algebraic balance with the network."""
         self.balance_list.append(balance)
 
+
+    def add_model(self, model) -> None:
+        """
+        Register a model with the network.
+
+        Models are not evaluated directly by Network. They are used by solvers
+        to build and replace optional component implementations.
+        """
+        self.model_list.append(model)
+
+
     def track(self, name: str, state: State) -> State:
         """
         Track an extra State or derived State in printed/exported results.
@@ -75,6 +87,11 @@ class Network:
     def balances(self) -> list[str]:
         """Return balance names."""
         return [b.name for b in self.balance_list]
+        
+    @property
+    def models(self) -> list[str]:
+        """Return model names."""
+        return [m.name for m in self.model_list]
 
     # ------------------------------------------------------------------
     # Iteration variable metadata
