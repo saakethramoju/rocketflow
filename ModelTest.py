@@ -92,5 +92,7 @@ results = SteadyState(ModelNetwork).solve(
     model="Outlet 1",
     verbose=True,
     print_solution=True,
-    filename="test.xlsx"
+    filename="test.xlsx",
+    #static=True,
+    evaluate_all_model_options=True
 )

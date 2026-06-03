@@ -369,13 +369,14 @@ class SteadyState:
 
         return max_change
 
+
     # ------------------------------------------------------------------
     # Model helpers
     # ------------------------------------------------------------------
 
     def _get_model(self, model):
         """
-        Return a Model object from either a Model instance or model name.
+        Return a Model object from either a Model instance or a model name.
         """
         if model is None:
             return None
@@ -392,23 +393,19 @@ class SteadyState:
             f"Available models are {[m.name for m in self.network.model_list]}."
         )
 
-    def _build_unbuilt_models(self) -> None:
+    def _build_unbuilt_models(self, exclude_model=None) -> None:
         """
         Build the first option for every unbuilt registered Model.
+
+        If exclude_model is provided, that Model is skipped because the caller
+        is explicitly controlling its active option.
         """
         for model in self.network.model_list:
+            if model is exclude_model:
+                continue
+
             if model.active_component is None:
                 model.build()
-
-    def _next_fallback_model(self):
-        """
-        Return the first active Model that still has another option.
-        """
-        for model in self.network.model_list:
-            if model.has_next:
-                return model
-
-        return None
 
     def _active_model_summary(self) -> str:
         """
@@ -432,7 +429,7 @@ class SteadyState:
         model=None,
     ) -> None:
         """
-        Store a concise model-attempt failure record for later printing.
+        Store a concise model-option failure record for later printing.
         """
         failures.append({
             "model": model.name if model is not None else "<network>",
@@ -571,7 +568,7 @@ class SteadyState:
         state_tolerance: float = 1e-10,
     ):
         """
-        Evaluate the currently built network once without model fallback.
+        Evaluate the currently built network once without model switching.
         """
         start_time = time.perf_counter()
 
@@ -588,11 +585,16 @@ class SteadyState:
             return_type=return_type,
         )
 
-        return solution, elapsed_time
+        self._last_success_kind = "static"
+        self._last_static_elapsed_time = elapsed_time
+        self._last_solve_diagnostics = None
+
+        return solution
 
     def static_evaluate(
         self,
         model: str | None = None,
+        evaluate_all_model_options: bool = False,
         filename: str | None = None,
         return_type: str = "dict",
         verbose: bool = False,
@@ -603,35 +605,56 @@ class SteadyState:
         """
         Evaluate a network without nonlinear solving.
 
-        If model is None, the first option for each registered Model is built
-        and the static evaluation is attempted. If evaluation fails, model
-        options are advanced until one network configuration evaluates
-        successfully.
+        If model is None, the first option from each registered Model is built
+        and the network is evaluated once. No fallback is attempted.
 
-        If model is provided, every option in that specific Model is evaluated.
-        Failed options are skipped. The returned result and optional file export
-        include only successful options. Terminal output shows skipped options
-        and the last successful option.
+        If model is provided and evaluate_all_model_options=False, options in
+        that Model are tried in order until the first successful evaluation.
+        Only that successful evaluation is returned/exported.
+
+        If model is provided and evaluate_all_model_options=True, every option
+        in that Model is attempted. Failed options are skipped. Only successful
+        options are returned/exported.
         """
         selected_model = self._get_model(model)
 
         # --------------------------------------------------------------
-        # Evaluate every option in one requested Model.
+        # Normal static evaluation: models behave like normal components.
         # --------------------------------------------------------------
-        if selected_model is not None:
-            results = {}
-            raw_results = {}
+        if selected_model is None:
+            self._build_unbuilt_models()
+
+            solution = self._static_evaluate_once(
+                filename=filename,
+                return_type=return_type,
+                state_max_passes=state_max_passes,
+                state_tolerance=state_tolerance,
+            )
+
+            self._print_last_success(
+                verbose=verbose,
+                print_solution=print_solution,
+            )
+
+            return solution
+
+        # Other Models still need concrete components, but only the selected
+        # Model is swept or retried.
+        self._build_unbuilt_models(exclude_model=selected_model)
+
+        # --------------------------------------------------------------
+        # Try options until the first successful static evaluation.
+        # --------------------------------------------------------------
+        if not evaluate_all_model_options:
             failures = []
-            last_success_option = None
-            last_elapsed_time = 0.0
 
             for option_name in selected_model.order:
                 selected_model.replace(option_name)
 
                 try:
-                    _, last_elapsed_time = self._static_evaluate_once(
-                        filename=None,
-                        return_type="dict",
+                    solution = self._static_evaluate_once(
+                        filename=filename,
+                        return_type=return_type,
                         state_max_passes=state_max_passes,
                         state_tolerance=state_tolerance,
                     )
@@ -644,91 +667,86 @@ class SteadyState:
                     )
                     continue
 
-                records = self.network.save(
-                    filename=None,
-                    return_type="dict",
-                )
-
-                raw_results[option_name] = records
-                results[option_name] = self._format_records_for_return(
-                    records,
-                    return_type,
-                )
-                last_success_option = option_name
-
-            if last_success_option is None:
                 self._print_model_failures(failures)
-                raise RuntimeError(
-                    f"All options failed for model {selected_model.name!r}."
+                self._print_last_success(
+                    verbose=verbose,
+                    print_solution=print_solution,
                 )
 
-            # Leave the network in the last successful configuration so printed
-            # solution tables match the successful option, not a failed option.
-            selected_model.replace(last_success_option)
-            _, last_elapsed_time = self._static_evaluate_once(
-                filename=None,
-                return_type="dict",
-                state_max_passes=state_max_passes,
-                state_tolerance=state_tolerance,
-            )
-
-            if filename is not None:
-                self._save_model_option_results(
-                    raw_results,
-                    filename,
-                )
+                return solution
 
             self._print_model_failures(failures)
-
-            if verbose:
-                self._verbose_static_print(
-                    elapsed_time=last_elapsed_time,
-                )
-
-            if print_solution:
-                self.print_solution()
-
-            return results
+            raise RuntimeError(
+                f"All options failed for model {selected_model.name!r}."
+            )
 
         # --------------------------------------------------------------
-        # Normal static evaluation with model fallback.
+        # Attempt every option in the selected Model.
         # --------------------------------------------------------------
+        results = {}
+        raw_results = {}
         failures = []
-        self._build_unbuilt_models()
+        last_success_option = None
 
-        while True:
+        for option_name in selected_model.order:
+            selected_model.replace(option_name)
+
             try:
-                solution, elapsed_time = self._static_evaluate_once(
-                    filename=filename,
-                    return_type=return_type,
+                self._static_evaluate_once(
+                    filename=None,
+                    return_type="dict",
                     state_max_passes=state_max_passes,
                     state_tolerance=state_tolerance,
                 )
-                break
 
             except Exception as error:
-                self._record_model_failure(failures, error)
-                fallback_model = self._next_fallback_model()
+                self._record_model_failure(
+                    failures,
+                    error,
+                    model=selected_model,
+                )
+                continue
 
-                if fallback_model is None:
-                    self._print_model_failures(failures)
-                    raise RuntimeError(
-                        "All model fallback options failed during static evaluation."
-                    ) from error
-
-                fallback_model.build_next()
-
-        self._print_model_failures(failures)
-
-        if verbose:
-            self._verbose_static_print(
-                elapsed_time=elapsed_time,
+            records = self.network.save(
+                filename=None,
+                return_type="dict",
             )
 
-        if print_solution:
-            self.print_solution()
+            raw_results[option_name] = records
+            results[option_name] = self._format_records_for_return(
+                records,
+                return_type,
+            )
+            last_success_option = option_name
 
-        return solution
+        if last_success_option is None:
+            self._print_model_failures(failures)
+            raise RuntimeError(
+                f"All options failed for model {selected_model.name!r}."
+            )
+
+        # Leave the network and terminal output on the last successful option.
+        selected_model.replace(last_success_option)
+        self._static_evaluate_once(
+            filename=None,
+            return_type="dict",
+            state_max_passes=state_max_passes,
+            state_tolerance=state_tolerance,
+        )
+
+        if filename is not None:
+            self._save_model_option_results(
+                raw_results,
+                filename,
+            )
+
+        self._print_model_failures(failures)
+        self._print_last_success(
+            verbose=verbose,
+            print_solution=print_solution,
+        )
+
+        return results
 
     # ------------------------------------------------------------------
     # Main nonlinear solve
@@ -799,7 +817,7 @@ class SteadyState:
         state_tolerance: float = 1e-10,
     ):
         """
-        Solve the currently built network once without model fallback.
+        Solve the currently built network once without model switching.
         """
         method, jac = self._validate_solve_settings(
             solver_method=solver_method,
@@ -839,16 +857,12 @@ class SteadyState:
         no_residuals = len(r0) == 0
 
         if no_iteration_variables and no_residuals:
-            solution, elapsed_time = self._static_evaluate_once(
+            return self._static_evaluate_once(
                 filename=filename,
                 return_type=return_type,
                 state_max_passes=state_max_passes,
                 state_tolerance=state_tolerance,
             )
-            self._last_success_kind = "static"
-            self._last_static_elapsed_time = elapsed_time
-            self._last_solve_diagnostics = None
-            return solution
 
         # least_squares requires at least as many residuals as unknowns.
         if len(r0) < len(x0):
@@ -870,21 +884,17 @@ class SteadyState:
 
         start_time = time.perf_counter()
 
-        try:
-            sol = least_squares(
-                fun=self.residual,
-                x0=x0,
-                method=method,
-                bounds=bounds,
-                x_scale="jac",
-                jac=jac,
-                ftol=ftol,
-                xtol=xtol,
-                gtol=gtol,
-            )
-
-        except Exception:
-            raise
+        sol = least_squares(
+            fun=self.residual,
+            x0=x0,
+            method=method,
+            bounds=bounds,
+            x_scale="jac",
+            jac=jac,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+        )
 
         elapsed_time = time.perf_counter() - start_time
 
@@ -941,7 +951,11 @@ class SteadyState:
 
         return solution
 
-    def _print_last_success(self, verbose: bool, print_solution: bool) -> None:
+    def _print_last_success(
+        self,
+        verbose: bool,
+        print_solution: bool,
+    ) -> None:
         """
         Print diagnostics for the last successful static evaluation or solve.
         """
@@ -961,6 +975,7 @@ class SteadyState:
     def solve(
         self,
         model: str | None = None,
+        evaluate_all_model_options: bool = False,
         filename: str | None = None,
         return_type: str = "dict",
         verbose: bool = False,
@@ -980,18 +995,22 @@ class SteadyState:
 
         If static=True, this delegates to static_evaluate().
 
-        If model is None, registered Models are treated as fallback choices.
-        The solver tries the currently active/default model options, advances
-        model options after failures, and exports only the successful result.
+        If model is None, registered Models are treated like normal component
+        placeholders. Their first options are built and the system is solved
+        once. No model fallback is attempted.
 
-        If model is provided, every option in that specific Model is attempted.
-        Failed options are skipped. The returned result and optional file export
-        include only successful options. Terminal output shows skipped options
-        and the last successful option.
+        If model is provided and evaluate_all_model_options=False, options in
+        that Model are tried in order until the first successful solve. Only
+        that successful solve is returned/exported.
+
+        If model is provided and evaluate_all_model_options=True, every option
+        in that Model is attempted. Failed options are skipped. Only successful
+        options are returned/exported.
         """
         if static:
             return self.static_evaluate(
                 model=model,
+                evaluate_all_model_options=evaluate_all_model_options,
                 filename=filename,
                 return_type=return_type,
                 verbose=verbose,
@@ -1003,20 +1022,47 @@ class SteadyState:
         selected_model = self._get_model(model)
 
         # --------------------------------------------------------------
-        # Attempt every option in one requested Model.
+        # Normal solve: models behave like normal components.
         # --------------------------------------------------------------
-        if selected_model is not None:
-            results = {}
-            raw_results = {}
+        if selected_model is None:
+            self._build_unbuilt_models()
+
+            solution = self._solve_once(
+                filename=filename,
+                return_type=return_type,
+                solver_method=solver_method,
+                jacobian_method=jacobian_method,
+                ftol=ftol,
+                xtol=xtol,
+                gtol=gtol,
+                rtol=rtol,
+                state_max_passes=state_max_passes,
+                state_tolerance=state_tolerance,
+            )
+
+            self._print_last_success(
+                verbose=verbose,
+                print_solution=print_solution,
+            )
+
+            return solution
+
+        # Other Models still need concrete components, but only the selected
+        # Model is swept or retried.
+        self._build_unbuilt_models(exclude_model=selected_model)
+
+        # --------------------------------------------------------------
+        # Try options until the first successful solve.
+        # --------------------------------------------------------------
+        if not evaluate_all_model_options:
             failures = []
-            last_success_option = None
 
             for option_name in selected_model.order:
                 selected_model.replace(option_name)
 
                 try:
-                    self._solve_once(
-                        filename=None,
+                    solution = self._solve_once(
+                        filename=filename,
                         return_type=return_type,
                         solver_method=solver_method,
                         jacobian_method=jacobian_method,
@@ -1036,65 +1082,34 @@ class SteadyState:
                     )
                     continue
 
-                records = self.network.save(
-                    filename=None,
-                    return_type="dict",
-                )
-
-                raw_results[option_name] = records
-                results[option_name] = self._format_records_for_return(
-                    records,
-                    return_type,
-                )
-                last_success_option = option_name
-
-            if last_success_option is None:
                 self._print_model_failures(failures)
-                raise RuntimeError(
-                    f"All options failed for model {selected_model.name!r}."
+                self._print_last_success(
+                    verbose=verbose,
+                    print_solution=print_solution,
                 )
 
-            # Re-run the last successful option so terminal output and network
-            # state correspond to the final successful configuration.
-            selected_model.replace(last_success_option)
-            self._solve_once(
-                filename=None,
-                return_type=return_type,
-                solver_method=solver_method,
-                jacobian_method=jacobian_method,
-                ftol=ftol,
-                xtol=xtol,
-                gtol=gtol,
-                rtol=rtol,
-                state_max_passes=state_max_passes,
-                state_tolerance=state_tolerance,
-            )
-
-            if filename is not None:
-                self._save_model_option_results(
-                    raw_results,
-                    filename,
-                )
+                return solution
 
             self._print_model_failures(failures)
-            self._print_last_success(
-                verbose=verbose,
-                print_solution=print_solution,
+            raise RuntimeError(
+                f"All options failed for model {selected_model.name!r}."
             )
 
-            return results
-
         # --------------------------------------------------------------
-        # Normal solve with model fallback.
+        # Attempt every option in the selected Model.
         # --------------------------------------------------------------
+        results = {}
+        raw_results = {}
         failures = []
-        self._build_unbuilt_models()
+        last_success_option = None
 
-        while True:
+        for option_name in selected_model.order:
+            selected_model.replace(option_name)
+
             try:
-                solution = self._solve_once(
-                    filename=filename,
-                    return_type=return_type,
+                self._solve_once(
+                    filename=None,
+                    return_type="dict",
                     solver_method=solver_method,
                     jacobian_method=jacobian_method,
                     ftol=ftol,
@@ -1104,19 +1119,53 @@ class SteadyState:
                     state_max_passes=state_max_passes,
                     state_tolerance=state_tolerance,
                 )
-                break
 
             except Exception as error:
-                self._record_model_failure(failures, error)
-                fallback_model = self._next_fallback_model()
+                self._record_model_failure(
+                    failures,
+                    error,
+                    model=selected_model,
+                )
+                continue
 
-                if fallback_model is None:
-                    self._print_model_failures(failures)
-                    raise RuntimeError(
-                        "All model fallback options failed during steady-state solve."
-                    ) from error
+            records = self.network.save(
+                filename=None,
+                return_type="dict",
+            )
 
-                fallback_model.build_next()
+            raw_results[option_name] = records
+            results[option_name] = self._format_records_for_return(
+                records,
+                return_type,
+            )
+            last_success_option = option_name
+
+        if last_success_option is None:
+            self._print_model_failures(failures)
+            raise RuntimeError(
+                f"All options failed for model {selected_model.name!r}."
+            )
+
+        # Leave the network and terminal output on the last successful option.
+        selected_model.replace(last_success_option)
+        self._solve_once(
+            filename=None,
+            return_type="dict",
+            solver_method=solver_method,
+            jacobian_method=jacobian_method,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+            rtol=rtol,
+            state_max_passes=state_max_passes,
+            state_tolerance=state_tolerance,
+        )
+
+        if filename is not None:
+            self._save_model_option_results(
+                raw_results,
+                filename,
+            )
 
         self._print_model_failures(failures)
         self._print_last_success(
@@ -1124,7 +1173,7 @@ class SteadyState:
             print_solution=print_solution,
         )
 
-        return solution
+        return results
     # ------------------------------------------------------------------
     # Solution printing
     # ------------------------------------------------------------------
