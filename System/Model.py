@@ -1,23 +1,54 @@
 class ModelOption:
     """
-    Deferred component definition used by Model.
+    Deferred model option used by Model.
 
-    A ModelOption stores the component class and constructor
-    arguments needed to build a real component later.
+    A ModelOption can represent either:
+        1) one deferred component, or
+        2) a group of deferred components that should be built/removed together.
 
-    Unlike a normal Component, a ModelOption does not register
-    itself with a Network when created.
+    Unlike a normal Component, a ModelOption does not register itself with a
+    Network when created.
     """
 
     def __init__(
         self,
         name: str,
-        component_class: type,
-        kwargs: dict,
+        *model_options: "ModelOption",
+        component_class: type | None = None,
+        kwargs: dict | None = None,
+        components: list["ModelOption"] | None = None,
     ):
         self.name = name
         self.component_class = component_class
-        self.kwargs = kwargs
+        self.kwargs = kwargs or {}
+
+        # Allow grouped options to be passed positionally or by keyword.
+        self.components = list(model_options)
+
+        if components is not None:
+            self.components.extend(components)
+
+        self._validate()
+
+    def _validate(self) -> None:
+        """
+        Validate whether this option is a single component or a component group.
+        """
+
+        is_group = len(self.components) > 0
+        is_single = self.component_class is not None
+
+        if is_group and is_single:
+            raise ValueError(
+                f"{self.name}: ModelOption cannot define both "
+                "component_class and grouped components."
+            )
+
+        if not is_group and not is_single:
+            raise ValueError(
+                f"{self.name}: ModelOption requires either "
+                "component_class or grouped components."
+            )
 
     def build(
         self,
@@ -25,8 +56,17 @@ class ModelOption:
         network,
     ):
         """
-        Construct and return the real component represented by this option.
+        Build this option into the network.
+
+        Single-component options return one component.
+        Group options return a list of components.
         """
+
+        if self.is_group:
+            return [
+                option.build(option.name, network)
+                for option in self.components
+            ]
 
         return self.component_class(
             component_name,
@@ -35,10 +75,21 @@ class ModelOption:
         )
 
     @property
+    def is_group(self) -> bool:
+        """
+        True if this option builds multiple components.
+        """
+
+        return len(self.components) > 0
+
+    @property
     def component_name(self) -> str:
         """
-        Name of the component class this option will build.
+        Name of the component class or component group.
         """
+
+        if self.is_group:
+            return "Group"
 
         return self.component_class.__name__
 
@@ -46,6 +97,13 @@ class ModelOption:
         return self.name
 
     def __repr__(self) -> str:
+        if self.is_group:
+            return (
+                f"ModelOption("
+                f"name={self.name!r}, "
+                f"components={[component.name for component in self.components]})"
+            )
+
         return (
             f"ModelOption("
             f"name={self.name!r}, "
@@ -57,13 +115,13 @@ class Model:
     """
     Collection of alternative component implementations.
 
-    A Model stores one or more ModelOptions and builds one selected
-    option into the network when build() is called.
+    A Model stores one or more ModelOptions and builds one selected option
+    into the network when build() is called.
 
     Notes
     -----
     1) Model does not build automatically during initialization.
-    2) Only the active option is converted into a real component.
+    2) Only the active option is converted into real component(s).
     3) Switching options should happen between solve attempts, not during
        a Newton iteration.
     """
@@ -72,43 +130,55 @@ class Model:
         self,
         name: str,
         network,
-        components: list[ModelOption],
+        *model_options: ModelOption,
+        components: list[ModelOption] | None = None,
         order: list[str] | None = None,
     ):
         """
         Parameters
         ----------
         name:
-            Name assigned to the real component when it is built.
+            Name assigned to the model.
 
         network:
-            Network the selected component will be added to.
+            Network the selected option will be added to.
+
+        *model_options:
+            ModelOptions passed positionally.
 
         components:
-            Available ModelOptions.
+            Optional list of ModelOptions. Kept for compatibility with the
+            earlier components=[...] API.
 
         order:
             Optional list of option names defining the try order.
-            Defaults to the declaration order in components.
+            Defaults to declaration order.
         """
 
         self.name = name
         self.network = network
 
+        # Support both positional options and components=[...] options.
+        option_list = list(model_options)
+
+        if components is not None:
+            option_list.extend(components)
+
+        self._option_list = option_list
+
         # Store options by user-facing option name.
         self.components = {
             component.name: component
-            for component in components
+            for component in option_list
         }
 
         # Default to the same order the options were provided in.
         self.order = (
             order
             if order is not None
-            else [component.name for component in components]
+            else [component.name for component in option_list]
         )
 
-        # Validate early so typos fail before solving.
         self._validate()
 
         self.active_option_name = None
@@ -119,11 +189,14 @@ class Model:
         Validate component names and order entries.
         """
 
-        if len(self.components) == 0:
+        if len(self._option_list) == 0:
             raise ValueError(f"{self.name}: Model requires at least one option.")
 
-        if len(self.components) != len(set(self.components)):
-            raise ValueError(f"{self.name}: duplicate model option names found.")
+        if len(self.components) != len(self._option_list):
+            raise ValueError(
+                f"{self.name}: duplicate model option names found. "
+                f"Option names must be unique."
+            )
 
         invalid_options = [
             option_name
@@ -143,7 +216,7 @@ class Model:
         option_name: str | None = None,
     ):
         """
-        Build and return the selected component.
+        Build and return the selected option.
 
         If no option name is supplied, the first option in self.order is used.
         """
@@ -154,7 +227,6 @@ class Model:
                 f"option {self.active_option_name!r}."
             )
 
-        # Use the first option by default.
         option_name = option_name or self.order[0]
 
         if option_name not in self.components:
@@ -166,20 +238,46 @@ class Model:
         option = self.components[option_name]
 
         self.active_option_name = option_name
-
-        self.active_component = option.build(
-            self.name,
-            self.network,
-        )
+        self.active_component = option.build(self.name, self.network)
 
         return self.active_component
+
+    def clear(self) -> None:
+        """
+        Remove the active component or component group from the network.
+        """
+
+        if self.active_component is None:
+            return
+
+        active_components = (
+            self.active_component
+            if isinstance(self.active_component, list)
+            else [self.active_component]
+        )
+
+        for component in active_components:
+            self.network.remove_component(component)
+
+        self.active_component = None
+        self.active_option_name = None
+
+    def replace(
+        self,
+        option_name: str,
+    ):
+        """
+        Replace the active option with another option.
+        """
+
+        self.clear()
+        return self.build(option_name)
 
     def next(self) -> str:
         """
         Return the name of the next model option.
 
-        This does not build the next option. It only tells you what the
-        next option would be.
+        This does not build the next option.
         """
 
         if self.active_option_name is None:
@@ -195,10 +293,10 @@ class Model:
 
     def build_next(self):
         """
-        Build the next model option in the order list.
+        Replace the active option with the next option in the order list.
         """
 
-        return self.build(self.next())
+        return self.replace(self.next())
 
     @property
     def active_option(self):
@@ -210,47 +308,6 @@ class Model:
             return None
 
         return self.components[self.active_option_name]
-    
-
-    def clear(self) -> None:
-        """
-        Remove the currently active component from the network.
-
-        After clearing, this Model can build another option.
-        """
-
-        if self.active_component is None:
-            return
-
-        self.network.remove_component(self.active_component)
-
-        self.active_component = None
-        self.active_option_name = None
-
-
-
-    def replace(
-        self,
-        option_name: str,
-    ):
-        """
-        Replace the active component with another model option.
-        """
-
-        self.clear()
-        return self.build(option_name)
-
-
-
-    def build_next(self):
-        """
-        Replace the active component with the next option in the order list.
-        """
-
-        next_option_name = self.next()
-        return self.replace(next_option_name)
-
-
 
     @property
     def available_options(self) -> list[str]:
@@ -259,7 +316,6 @@ class Model:
         """
 
         return list(self.components)
-    
 
     @property
     def has_next(self) -> bool:
@@ -273,7 +329,6 @@ class Model:
         current_index = self.order.index(self.active_option_name)
 
         return current_index < len(self.order) - 1
-
 
     def __str__(self) -> str:
         return self.name

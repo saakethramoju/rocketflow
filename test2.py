@@ -9,21 +9,52 @@ ModelNetwork = Network("Model Network")
 D = 3 * IN_TO_M
 A = (np.pi / 4) * D**2
 
+# ------------------------------------------------------------------
+# Fluid lookup
+# ------------------------------------------------------------------
+
 SourceFluid = FluidLookup(
     "Source Fluid",
     ModelNetwork,
-    {"gn2": 0.75, "O2": 0.01, "Ar": 0.24},
+    "rp-1",
     pressure=3e5,
     temperature=300,
 )
 
-DarcyOption = DischargeCoefficient.model(
+# ------------------------------------------------------------------
+# Shared states for the Darcy/Colebrook option
+# ------------------------------------------------------------------
+
+DarcyMassFlow = State(1.0)
+DarcyFrictionFactor = State(0.02)
+
+# ------------------------------------------------------------------
+# Model options
+# ------------------------------------------------------------------
+
+DarcyOption = ModelOption(
     "darcy",
-    upstream_pressure=SourceFluid.pressure,
-    downstream_pressure=101325,
-    density=SourceFluid.density,
-    discharge_coefficient=1,
-    cross_sectional_area=A / 4,
+    components=[
+        Colebrook.model(
+            "Outlet 1 Friction",
+            mass_flow=DarcyMassFlow,
+            friction_factor=DarcyFrictionFactor,
+            hydraulic_diameter=D,
+            dynamic_viscosity=SourceFluid.dynamic_viscosity,
+            cross_sectional_area=A,
+        ),
+        DarcyWeisbach.model(
+            "Outlet 1 Darcy",
+            mass_flow=DarcyMassFlow,
+            upstream_pressure=SourceFluid.pressure,
+            downstream_pressure=101325,
+            length=1,
+            cross_sectional_area=A,
+            hydraulic_diameter=D,
+            density=SourceFluid.density,
+            friction_factor=DarcyFrictionFactor,
+        ),
+    ],
 )
 
 CompressibleOption = CompressibleFlowTube.model(
@@ -56,16 +87,27 @@ Outlet1 = Model(
     ],
 )
 
+# ------------------------------------------------------------------
+# Manual fallback test
+# ------------------------------------------------------------------
 
 Outlet1.build("darcy")
 
+print(ModelNetwork.components)
+
 try:
-    raise RuntimeError("fake darcy failure")
+
+    SteadyState(ModelNetwork).solve(
+        verbose=True,
+        print_solution=True,
+    )
 
 except Exception as e:
     print(f"{Outlet1.active_option} failed: {e}")
 
     Outlet1.build_next()
+
+    print(ModelNetwork.components)
 
     SteadyState(ModelNetwork).solve(
         verbose=True,

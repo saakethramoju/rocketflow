@@ -113,14 +113,22 @@ class Component(ABC):
         self.network.add_component(component=self)
 
 
+
     @classmethod
     def model(cls, name: str | None = None, **kwargs):
+        """
+        Create a deferred model option for this component class.
+
+        This does not construct the component or register it with a Network.
+        The component is built later by Model.
+        """
 
         return ModelOption(
-            name=name or cls.__name__,
+            name or cls.__name__,
             component_class=cls,
             kwargs=kwargs,
         )
+
 
     #@abstractmethod
     def pre_evaluation(self) -> None:
