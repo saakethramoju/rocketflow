@@ -15,8 +15,8 @@ class Solid(Component):
                  name: str, 
                  network: Network,
                  temperature: State, 
-                 mass: float,
-                 specific_heat: State, 
+                 mass: float | None = None,
+                 specific_heat: State | None = None, 
                  heat_rate_in: State | None = None,
                  heat_rate_out: State | None = None):
         self.setup()

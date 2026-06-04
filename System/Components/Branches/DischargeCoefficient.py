@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 from typing import TYPE_CHECKING
 
-from System import Component, State
+from System import Component
 
 if TYPE_CHECKING:
-    from System import Network
+    from System import Network, State
 
 
 
