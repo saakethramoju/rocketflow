@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from System import Component, State, Composition
+from System import Component, Composition
 
 if TYPE_CHECKING:
-    from System import Network
+    from System import Network, State
 
 
 
