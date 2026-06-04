@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from System import Component, State, Composition
-from thermoprop import Propellant
+from System import Component, State
+from thermoprop import Propellant, FluidRegistry
 
 from Exceptions import InvalidThermoStateError
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from System import Network
 
 
-PropellantInput = str | Composition
+PropellantInput = str
 
 
 class PropellantLookup(Component):
@@ -41,6 +41,10 @@ class PropellantLookup(Component):
     No reference adjustment is needed because the Propellant wrapper does not
     expose reference-dependent thermodynamic properties such as enthalpy,
     internal energy, or entropy.
+
+    PropellantLookup does not support Composition objects or arbitrary mixtures.
+    Named RocketProps mixtures such as MON25, A50, or MHF3 should be passed as
+    single propellant strings.
 
     Only pressure and temperature can be iteration/input states. There is no
     flash_values argument because RocketProps does not support alternate
@@ -75,13 +79,24 @@ class PropellantLookup(Component):
         if hasattr(self, "property_states"):
             delattr(self, "property_states")
 
-        initial_propellant = self.propellant
-        self.composition = self._initialize_composition(initial_propellant)
-        self.propellant = self.composition
+        if not isinstance(propellant, str):
+            raise TypeError(
+                f"{self.name}: PropellantLookup only accepts a RocketProps "
+                "propellant name or alias string. Composition objects and "
+                "multi-species mixtures are not supported. Use named "
+                "RocketProps mixtures such as 'MON25', 'A50', or 'MHF3'."
+            )
 
-        self._rocketprops_propellant = None
+        # Keep both the user input and the canonical RocketProps backend name.
+        # This avoids Composition, which intentionally uses the Fluid/IdealGas
+        # registry where "rp-1" maps to "n-Dodecane".
+        self._propellant_input = propellant
+        self._rocketprops_propellant = FluidRegistry.propellant_name(propellant)
+
+        # Public identity. This is a string, not a Composition.
+        self.propellant = self._rocketprops_propellant
+
         self._Propellant = None
-        self._last_composition_values: tuple[float, ...] | None = None
 
         provided_names = [
             prop_name
@@ -108,9 +123,7 @@ class PropellantLookup(Component):
         self._property_states: dict[str, State] = {}
         self._external_property_names: set[str] = set()
 
-        # Initialize now if possible; otherwise defer until composition is valid.
-        if self.composition.is_assigned and self._composition_is_valid():
-            self._initialize_backend()
+        self._initialize_backend()
 
         # Flash states should be assignable States.
         for flash_name in self._flash_names:
@@ -163,15 +176,30 @@ class PropellantLookup(Component):
             self._property_states[prop_name] = state
             self._external_property_names.add(prop_name)
 
+    @property
+    def propellant_name(self) -> str:
+        """Return the canonical RocketProps propellant name."""
+        return self._rocketprops_propellant
+
+    @property
+    def composition(self):
+        """
+        PropellantLookup does not support Composition.
+
+        Propellant aliases must stay in the RocketProps registry path. Using the
+        normal Composition class would route names through the Fluid/IdealGas
+        registry, where aliases such as "rp-1" become "n-Dodecane".
+        """
+        raise AttributeError(
+            f"{self.name}: PropellantLookup does not support composition. "
+            "Pass propellants as strings, or use .propellant_name to pass the "
+            "same propellant into another PropellantLookup."
+        )
+
     def pre_evaluation(self):
         self.evaluate_states()
 
     def evaluate_states(self) -> None:
-        if not self._ensure_backend_initialized():
-            return
-
-        self._set_propellant_from_composition()
-
         try:
             self._set_propellant_from_flash()
 
@@ -181,15 +209,10 @@ class PropellantLookup(Component):
                 for name in self._flash_names
             }
 
-            composition = {
-                species: state.value
-                for species, state in self.composition
-            }
-
             raise InvalidThermoStateError(
                 f"{self.name}: invalid propellant state.\n"
-                f"Flash variables: {flash_state}\n"
-                f"Composition: {composition}"
+                f"Propellant: {self._rocketprops_propellant!r}\n"
+                f"Flash variables: {flash_state}"
             ) from e
 
         for prop_name in self._external_property_names:
@@ -198,6 +221,13 @@ class PropellantLookup(Component):
             )
 
     def __getattr__(self, name: str) -> State:
+
+        if name == "composition":
+            raise AttributeError(
+                f"{self.name}: PropellantLookup does not support composition. "
+                "Pass propellants as strings, or use .propellant_name to pass the "
+                "same propellant into another PropellantLookup."
+            )
 
         if "_Propellant" not in self.__dict__:
             raise AttributeError(name)
@@ -213,11 +243,9 @@ class PropellantLookup(Component):
             )
 
         return self._property_states[name]
-
+    
     def _initialize_backend(self) -> None:
         """Create the RocketProps-backed Propellant object."""
-        self._rocketprops_propellant = self._propellant_argument_from_composition()
-
         self._Propellant = Propellant(
             self._rocketprops_propellant,
             **{
@@ -228,42 +256,6 @@ class PropellantLookup(Component):
 
         self._last_flash_values = None
         self._property_cache.clear()
-
-    def _ensure_backend_initialized(self) -> bool:
-        if self._Propellant is not None:
-            return True
-
-        if not self.composition.is_assigned:
-            return False
-
-        if not self._composition_is_valid():
-            return False
-
-        self._initialize_backend()
-        return True
-
-    def _composition_is_valid(self) -> bool:
-        """
-        Return True if the propellant input is valid.
-
-        PropellantLookup only supports one RocketProps propellant name at a
-        time. Named RocketProps mixtures such as MON25 or A50 should be passed
-        as a single propellant name, not as a multi-species Composition.
-        """
-        if not self.composition.is_assigned:
-            return False
-
-        values = tuple(
-            self.composition[species].value
-            for species in self.composition.species
-        )
-
-        return len(values) == 1 and np.isclose(
-            values[0],
-            1.0,
-            rtol=0.0,
-            atol=1e-6,
-        )
 
     def _set_propellant_from_flash(self) -> None:
 
@@ -304,10 +296,10 @@ class PropellantLookup(Component):
 
     def _get_cached_property(self, name: str):
 
-        if not self._ensure_backend_initialized():
+        if self._Propellant is None:
             raise ValueError(
                 f"{self.name}: cannot evaluate {name!r} because the "
-                "propellant composition is not initialized yet."
+                "propellant backend is not initialized."
             )
 
         if name not in self._property_cache:
@@ -319,121 +311,6 @@ class PropellantLookup(Component):
         return isinstance(
             getattr(Propellant, name, None),
             property,
-        )
-
-    def _initialize_composition(self, propellant: PropellantInput) -> Composition:
-
-        if isinstance(propellant, Composition):
-            composition = propellant
-        else:
-            try:
-                composition = Composition(propellant)
-            except Exception as e:
-                raise ValueError(
-                    f"{self.name}: invalid propellant input {propellant!r}. "
-                    "Expected a RocketProps propellant name or a single-species "
-                    "Composition object."
-                ) from e
-
-        if not composition.is_assigned:
-            raise ValueError(
-                f"{self.name}: propellant composition must contain one species."
-            )
-
-        if len(composition.species) != 1:
-            raise ValueError(
-                f"{self.name}: PropellantLookup only supports one RocketProps "
-                "propellant name at a time. Named mixtures such as MON25, A50, "
-                "or MHF3 should be passed as a single propellant name, not as a "
-                "multi-species Composition."
-            )
-
-        return composition
-
-    def _propellant_argument_from_composition(self) -> str:
-
-        values = self.composition.values
-
-        if len(values) != 1:
-            raise ValueError(
-                f"{self.name}: PropellantLookup requires exactly one "
-                "RocketProps propellant name."
-            )
-
-        propellant, fraction = next(iter(values.items()))
-
-        if not np.isclose(fraction, 1.0, rtol=0.0, atol=1e-6):
-            raise ValueError(
-                f"{self.name}: single propellant fraction must be 1.0. "
-                f"Got {fraction}."
-            )
-
-        return propellant
-
-    def _composition_values(self) -> tuple[float, ...]:
-        return tuple(
-            self.composition[species].value
-            for species in self.composition.species
-        )
-
-    def _set_propellant_from_composition(self) -> None:
-
-        composition_values = self._composition_values()
-
-        if self._composition_values_unchanged(composition_values):
-            return
-
-        if len(composition_values) != 1:
-            raise ValueError(
-                f"{self.name}: PropellantLookup only supports one RocketProps "
-                "propellant name at a time."
-            )
-
-        if not np.isclose(composition_values[0], 1.0, rtol=0.0, atol=1e-6):
-            raise ValueError(
-                f"{self.name}: single propellant fraction must be 1.0. "
-                f"Got {composition_values[0]}."
-            )
-
-        new_propellant = self._propellant_argument_from_composition()
-
-        # Species changed, so rebuild the RocketProps backend.
-        if new_propellant != self._rocketprops_propellant:
-            self._rocketprops_propellant = new_propellant
-
-            self._Propellant = Propellant(
-                self._rocketprops_propellant,
-                **{
-                    name: getattr(self, name).value
-                    for name in self._flash_names
-                },
-            )
-
-            self._last_composition_values = composition_values
-            self._last_flash_values = None
-            self._property_cache.clear()
-            return
-
-        self._last_composition_values = composition_values
-        self._last_flash_values = None
-        self._property_cache.clear()
-
-    def _composition_values_unchanged(
-        self,
-        composition_values: tuple[float, ...],
-        rtol: float = 1e-10,
-        atol: float = 1e-12,
-    ) -> bool:
-
-        if self._last_composition_values is None:
-            return False
-
-        return all(
-            np.isclose(current, previous, rtol=rtol, atol=atol)
-            for current, previous in zip(
-                composition_values,
-                self._last_composition_values,
-            )
         )
 
     @property
@@ -455,7 +332,6 @@ class PropellantLookup(Component):
             "_last_flash_values",
             "property_cache",
             "_property_cache",
-            "composition",
-            "last_composition_values",
-            "_last_composition_values",
+            "propellant_input",
+            "_propellant_input",
         }

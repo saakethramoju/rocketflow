@@ -10,7 +10,7 @@ PropFeedSystem = Network("Prop Feed System")
 SourceProp = PropellantLookup(
     "Source Prop",
     PropFeedSystem,
-    "ch4",
+    "rp-1",
     temperature=90,
     pressure=5e5
 )
@@ -19,7 +19,7 @@ SourceProp = PropellantLookup(
 VolumeProp = PropellantLookup(
     "Volume Prop",
     PropFeedSystem,
-    SourceProp.composition,
+    SourceProp.propellant_name,
     temperature=90,
     pressure=1e5
 )
