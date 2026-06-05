@@ -187,6 +187,41 @@ class EllipsePoiseuille(Component):
 
 
 
+class CircularAnnulus(Component):
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        inner_diameter: float,
+        outer_diameter: float,
+        poiseuille_number: float | None = None,
+    ):
+        if inner_diameter <= 0.0:
+            raise ValueError(f"Annulus inner diameter must be positive. Got length={inner_diameter}.")
+        
+        if outer_diameter <= 0.0:
+            raise ValueError(f"Annulus outer_diameter must be positive. Got length={outer_diameter}.")
+
+        self.setup()
+        a = outer_diameter
+        b = inner_diameter
+        x = b/a
+
+        if x < 0.2508:
+            A0 = 24.8272
+            A1 = 0.0479888
+            self.poiseuille_number.value = A0 * x**A1
+        else:
+            A0 = 22.0513
+            A1 = 6.44473
+            A2 = -7.35451
+            A3 = 2.78999
+            A4 = 0
+            self.poiseuille_number.value = A0 + A1*x + A2*x**2 + A3*x**3 + A4*x**4
+
+
+
 class HydraulicDiameter(Component):
     """
     Computes hydraulic diameter from flow area and wetted perimeter.
