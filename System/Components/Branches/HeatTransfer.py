@@ -218,8 +218,8 @@ class Convection(Component):
         network: Network,
         surface_temperature: State,
         fluid_temperature: State | float,
-        heat_transfer_coefficient: State | float,
         convective_area: State | float,
+        convection_coefficient: State | float | None = None,
         heat_rate: State | None = None,
     ):
         self.setup()
@@ -228,13 +228,8 @@ class Convection(Component):
         Ts = self.surface_temperature.value
         Tf = self.fluid_temperature.value
 
-        h = self.heat_transfer_coefficient.value
+        h = self.convection_coefficient.value
         A = self.convective_area.value
-
-        if h < 0.0:
-            raise ValueError(
-                f"{self.name}: heat_transfer_coefficient must be nonnegative. Got {h}."
-            )
 
         if A <= 0.0:
             raise ValueError(

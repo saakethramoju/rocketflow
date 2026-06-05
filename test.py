@@ -5,79 +5,99 @@ from constants import *
 
 ThermalSystem = Network("Thermal")
 
-mat = "718"
-L = 0.5*IN_TO_M
-D = 1 * IN_TO_M
-A = (np.pi/4) * D**2
 
 def harmonic_mean(a, b):
     return 2*a*b/(a+b)
 
-SourceMaterial = MaterialLookup(
-    "Source Material",
-    ThermalSystem,
-    mat,
-    temperature=600
-)
 
 
-NodeMaterial = MaterialLookup(
+TubeMaterial = MaterialLookup(
     "Node Material",
     ThermalSystem,
-    mat,
+    "718",
 )
 
-k1 = harmonic_mean(SourceMaterial.thermal_conductivity, NodeMaterial.thermal_conductivity)
-
-Conductor1 = Conduction(
-    "Conductor 1",
+SourceFluid = FluidLookup(
+    "Fluid Source",
     ThermalSystem,
-    temperature1=SourceMaterial.temperature,
-    temperature2=NodeMaterial.temperature,
-    thermal_conductivity=k1,
-    length=L,
-    conductive_area=A,
+    "lox",
+    pressure=5e5,
+    quality=0
+)
+
+VolFluid = FluidLookup(
+    "Fluid Source",
+    ThermalSystem,
+    "lox",
+    pressure=1e5,
+    quality=0
 )
 
 
-Metal = Solid(
-    "Solid Node",
+
+
+
+
+TubeFlow = DarcyWeisbach(
+    "Tub Flow",
     ThermalSystem,
-    temperature=NodeMaterial.temperature,
-    heat_rate_in=Conductor1.heat_rate
+    mass_flow=5,
+    upstream_pressure=SourceFluid.pressure,
+    downstream_pressure=VolFluid.pressure,
+    length=10 * IN_TO_M,
+    cross_sectional_area=(np.pi/4) * (0.5*IN_TO_M)**2,
+    hydraulic_diameter=0.5*IN_TO_M,
+    density=SourceFluid.density,
+    friction_factor=2e-5,
+)
+
+TubeFriction = Colebrook(
+    "Tube Friction",
+    ThermalSystem,
+    mass_flow=TubeFlow.mass_flow,
+    friction_factor=TubeFlow.friction_factor,
+    hydraulic_diameter=TubeFlow.hydraulic_diameter,
+    dynamic_viscosity=SourceFluid.dynamic_viscosity,
+    cross_sectional_area=TubeFlow.cross_sectional_area,
+    roughness=1e-9
+)
+
+Tube = Solid(
+    "Tube",
+    ThermalSystem,
+    temperature=TubeMaterial.temperature,
+)
+
+FlowConvection = Convection(
+    "Flow Convection",
+    ThermalSystem,
+    surface_temperature=Tube.temperature,
+    fluid_temperature=SourceFluid.temperature,
+    convective_area=2 * TubeFlow.cross_sectional_area,
+    heat_rate=Tube.heat_rate_in,
+)
+
+FlowDittus = DittusBoelter(
+    "Flow Dittus",
+    ThermalSystem,
+    hydraulic_diameter=TubeFlow.hydraulic_diameter,
+    fluid_conductivity=SourceFluid.conductivity,
+    fluid_specific_heat=SourceFluid.specific_heat_cp,
+    fluid_dynamic_viscosity=SourceFluid.dynamic_viscosity,
+    cross_sectional_area=TubeFlow.cross_sectional_area,
+    mass_flow=TubeFlow.mass_flow,
+    convection_coefficient=FlowConvection.convection_coefficient
 )
 
 AirConvection = Convection(
-    "Air Convection",
+    "Flow Convection",
     ThermalSystem,
-    surface_temperature=Metal.temperature,
-    fluid_temperature=298.15,
-    heat_transfer_coefficient=20,
-    convective_area=A*6
+    surface_temperature=Tube.temperature,
+    fluid_temperature=293.15,
+    convective_area=2 * TubeFlow.cross_sectional_area,
+    convection_coefficient=25,
+    heat_rate=Tube.heat_rate_out,
 )
-
-
-Conductor2 = Conduction(
-    "Conductor 2",
-    ThermalSystem,
-    temperature1=Metal.temperature,
-    temperature2=300,
-    thermal_conductivity=NodeMaterial.thermal_conductivity,
-    length=L,
-    conductive_area=A/4,
-    #heat_rate=Metal.heat_rate_out
-)
-
-Radiator1 = AmbientRadiation(
-    "Radiator 1",
-    ThermalSystem,
-    solid_temperature=Metal.temperature,
-    ambient_temperature=298.15,
-    emissivity=0.8,
-    radiative_area=A,
-)
-
-Metal.heat_rate_out = Conductor2.heat_rate + Radiator1.heat_rate + AirConvection.heat_rate
 
 solution = SteadyState(ThermalSystem).solve(
     verbose=True,

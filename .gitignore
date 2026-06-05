@@ -113,3 +113,4 @@ Exceptions/__pycache__/LookupExceptions.cpython-313.pyc
 test.py
 test.py
 System/Components/Branches/__pycache__/HeatTransfer.cpython-313.pyc
+System/Components/Branches/__pycache__/ConvectionCoefficients.cpython-313.pyc
