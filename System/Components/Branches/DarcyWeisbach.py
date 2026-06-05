@@ -126,6 +126,8 @@ class DarcyWeisbach(Component):
 
 
 
+
+
 class RectanglePoiseuille(Component):
 
     def __init__(
@@ -181,3 +183,42 @@ class EllipsePoiseuille(Component):
         A3 = 22.3709
         A4 = -10.0874
         self.poiseuille_number.value = A0 + A1*x + A2*x**2 + A3*x**3 + A4*x**4
+
+
+
+
+class HydraulicDiameter(Component):
+    """
+    Computes hydraulic diameter from flow area and wetted perimeter.
+
+    Dh = 4A / Pw
+
+    This is the geometry diameter used for Reynolds number, Nusselt number,
+    and most duct-flow correlations. Positive hydraulic_diameter is required.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        cross_sectional_area: State | float,
+        wetted_perimeter: State | float,
+        hydraulic_diameter: State | None = None,
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        A = self.cross_sectional_area.value
+        P = self.wetted_perimeter.value
+
+        if A <= 0.0:
+            raise ValueError(
+                f"{self.name}: cross_sectional_area must be greater than zero. Got {A}."
+            )
+
+        if P <= 0.0:
+            raise ValueError(
+                f"{self.name}: wetted_perimeter must be greater than zero. Got {P}."
+            )
+
+        self.hydraulic_diameter.value = 4.0 * A / P
