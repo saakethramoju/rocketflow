@@ -8,6 +8,115 @@ if TYPE_CHECKING:
     from System import Network, State
 
 
+class Gnielinski(Component):
+    """
+    Gnielinski turbulent forced-convection heat transfer coefficient.
+
+    Correlation
+    -----------
+        Nu = ((f / 8) (Re - 1000) Pr)
+             / (1 + 12.7 sqrt(f / 8) (Pr^(2/3) - 1))
+
+        Re = mdot * Dh / (mu * A)
+
+        Pr = cp * mu / k
+
+        h = Nu * k / Dh
+
+    Parameters
+    ----------
+    hydraulic_diameter : State | float
+        Hydraulic diameter of the flow passage [m].
+
+    friction_factor : State | float
+        Darcy friction factor [-].
+
+    fluid_conductivity : State
+        Fluid thermal conductivity [W/m-K].
+
+    fluid_specific_heat : State
+        Fluid specific heat capacity [J/kg-K].
+
+    fluid_dynamic_viscosity : State
+        Fluid dynamic viscosity [Pa-s].
+
+    cross_sectional_area : State | float
+        Flow cross-sectional area [m²].
+
+    mass_flow : State
+        Fluid mass flow rate [kg/s]. The absolute value is used.
+
+    convection_coefficient : State, optional
+        Output convection coefficient h [W/m²-K].
+        If omitted, a new State is created.
+
+    Outputs
+    -------
+    convection_coefficient : State
+        Convective heat transfer coefficient [W/m²-K].
+
+    Assumptions
+    -----------
+    * Single-phase internal flow.
+    * Fully developed flow.
+    * Uses the Darcy friction factor.
+    * Fluid properties evaluated at the bulk fluid temperature.
+
+    Recommended Validity Range
+    --------------------------
+    * 3,000 <= Re <= 5×10⁶
+    * 0.5 <= Pr <= 2,000
+
+    Notes
+    -----
+    Gnielinski is generally more accurate than Dittus-Boelter and
+    Sieder-Tate because it incorporates the friction factor and remains
+    applicable through much of the transitional and turbulent regimes.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        hydraulic_diameter: State | float,
+        friction_factor: State | float,
+        fluid_conductivity: State,
+        fluid_specific_heat: State,
+        fluid_dynamic_viscosity: State,
+        cross_sectional_area: State | float,
+        mass_flow: State,
+        convection_coefficient: State | None = None,
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        Dh = self.hydraulic_diameter.value
+        f = self.friction_factor.value
+        k = self.fluid_conductivity.value
+        Cp = self.fluid_specific_heat.value
+        mu = self.fluid_dynamic_viscosity.value
+        A = self.cross_sectional_area.value
+        mdot = abs(self.mass_flow.value)
+
+        if Dh <= 0.0:
+            raise ValueError(
+                f"{self.name}: hydraulic_diameter must be greater than zero. Got {Dh}."
+            )
+
+        if A <= 0.0:
+            raise ValueError(
+                f"{self.name}: cross_sectional_area must be greater than zero. Got {A}."
+            )
+
+        Re = mdot * Dh / (mu * A)
+        Pr = mu * Cp / k
+
+        Nu = (f / 8.0) * (Re - 1000.0) * Pr / (1.0 + 12.7 * (f / 8.0) ** 0.5 * (Pr ** (2.0 / 3.0) - 1.0))
+
+        self.convection_coefficient.value = Nu * k / Dh
+
+
+
 class SiederTate(Component):
     """
     Sieder-Tate turbulent forced-convection heat transfer coefficient.
