@@ -12,18 +12,20 @@ class Conduction(Component):
     """
     One-dimensional conduction heat transfer between two temperature nodes.
 
-    Positive heat_rate indicates heat transfer from temperature1 to
-    temperature2 according to Fourier's law.
+    Positive heat_rate means heat is added to temperature1 from temperature2.
     """
-    def __init__(self, 
-                 name: str, 
-                 network: Network,
-                 temperature1: State,
-                 temperature2: State,
-                 thermal_conductivity: State,
-                 length: float,
-                 conductive_area: float,
-                 heat_rate: State | None = None):
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        temperature1: State,
+        temperature2: State,
+        thermal_conductivity: State,
+        length: float,
+        conductive_area: float,
+        heat_rate: State | None = None,
+    ):
         self.setup()
 
     def evaluate_states(self):
@@ -33,8 +35,16 @@ class Conduction(Component):
         T1 = self.temperature1.value
         T2 = self.temperature2.value
 
-        self.heat_rate.value = k * A / L * (T2 - T1)
+        if k <= 0.0:
+            raise ValueError(f"{self.name}: thermal_conductivity must be positive. Got {k}.")
 
+        if A <= 0.0:
+            raise ValueError(f"{self.name}: conductive_area must be positive. Got {A}.")
+
+        if L <= 0.0:
+            raise ValueError(f"{self.name}: length must be positive. Got {L}.")
+
+        self.heat_rate.value = k * A / L * (T2 - T1)
 
 
 
@@ -46,7 +56,7 @@ class Radiation(Component):
 
     Supports arbitrary surface emissivities, radiating areas, and view
     factors. Positive heat_rate indicates net radiative heat transfer
-    from temperature1 to temperature2.
+    from temperature2 to temperature1.
 
     This can be good for surface-to-sufrace contact radiation or vacuum
     jacketed tube radiation, for example.
@@ -136,8 +146,8 @@ class AmbientRadiation(Component):
     Radiation exchange between a surface and a surrounding ambient enclosure.
 
     Uses the enclosure radiation model with configurable ambient emissivity.
-    Positive heat_rate indicates net radiative heat transfer from the solid
-    surface to the ambient surroundings.
+    Positive heat_rate indicates net radiative heat transfer to the solid
+    surface from the ambient surroundings.
     """
 
     SIGMA = 5.670374419e-8  # W/m^2-K^4
@@ -203,13 +213,11 @@ class AmbientRadiation(Component):
 
 
 
-
 class Convection(Component):
     """
-    Convective heat transfer between a surface and a fluid or ambient node.
+    Convective heat transfer between a surface and a fluid.
 
-    Positive heat_rate indicates heat transfer from surface_temperature to
-    fluid_temperature according to Newton's law of cooling.
+    Positive heat_rate means heat is added to the surface from the fluid.
     """
 
     def __init__(
@@ -227,13 +235,13 @@ class Convection(Component):
     def evaluate_states(self):
         Ts = self.surface_temperature.value
         Tf = self.fluid_temperature.value
-
         h = self.convection_coefficient.value
         A = self.convective_area.value
 
+        if h <= 0.0:
+            raise ValueError(f"{self.name}: convection_coefficient must be positive. Got {h}.")
+
         if A <= 0.0:
-            raise ValueError(
-                f"{self.name}: convective_area must be greater than zero. Got {A}."
-            )
+            raise ValueError(f"{self.name}: convective_area must be positive. Got {A}.")
 
         self.heat_rate.value = h * A * (Tf - Ts)
