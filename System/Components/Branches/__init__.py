@@ -6,4 +6,4 @@ from .Regulators import *
 from .Pumps import *
 from .Turbines import *
 from .FrictionFactors import *
-from .ThermalConductors import *
+from .HeatTransfer import *

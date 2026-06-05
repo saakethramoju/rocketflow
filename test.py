@@ -10,6 +10,8 @@ L = 0.5*IN_TO_M
 D = 1 * IN_TO_M
 A = (np.pi/4) * D**2
 
+def geometric_mean(a, b):
+    return 2*a*b/(a+b)
 
 SourceMaterial = MaterialLookup(
     "Source Material",
@@ -25,16 +27,16 @@ NodeMaterial = MaterialLookup(
     mat,
 )
 
+k1 = geometric_mean(SourceMaterial.thermal_conductivity, NodeMaterial.thermal_conductivity)
 
-
-Rod1 = SolidConductor(
+Rod1 = Conduction(
     "Rod 1",
     ThermalSystem,
-    upstream_temperature=SourceMaterial.temperature,
-    downstream_temperature=NodeMaterial.temperature,
-    thermal_conductivity=SourceMaterial.thermal_conductivity,
+    temperature1=SourceMaterial.temperature,
+    temperature2=NodeMaterial.temperature,
+    thermal_conductivity=k1,
     length=L,
-    cross_sectional_area=A,
+    conductive_area=A,
 )
 
 
@@ -46,14 +48,14 @@ Metal = Solid(
 )
 
 
-Rod2 = SolidConductor(
+Rod2 = Conduction(
     "Rod 2",
     ThermalSystem,
-    upstream_temperature=Metal.temperature,
-    downstream_temperature=300,
+    temperature1=Metal.temperature,
+    temperature2=300,
     thermal_conductivity=NodeMaterial.thermal_conductivity,
     length=L,
-    cross_sectional_area=A,
+    conductive_area=A,
     heat_rate=Metal.heat_rate_out
 )
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from System import Component, State
+from System import Component
 
 if TYPE_CHECKING:
-    from System import Network
+    from System import Network, State
 
 
 class Boundary(Component):
@@ -23,4 +23,13 @@ class PressureBoundary(Component):
                  name: str,
                  network: Network,
                  pressure: State):
+        self.setup()
+
+
+class TemperatureBoundary(Component):
+
+    def __init__(self, 
+                 name: str,
+                 network: Network,
+                 temperature: State):
         self.setup()
