@@ -2,7 +2,7 @@ from System import *
 from Solvers import *
 from constants import *
 
-# Counter-flow HEX
+
 HeatExchanger = Network("Heat Exchanger")
 
 # ---- Geometry ----
@@ -371,19 +371,6 @@ Liquid1Solid1Convection = Convection(
     convection_coefficient=25,
 )
 
-Liquid1Solid1Gnielinski = Gnielinski(
-    "Liquid Node 1 to Solid Node 1 Gnielinski",
-    HeatExchanger,
-    hydraulic_diameter=LiquidTube1.hydraulic_diameter,
-    friction_factor=LiquidTube1.friction_factor,
-    fluid_conductivity=LiquidNode1Fluid.conductivity,
-    fluid_specific_heat=LiquidNode1Fluid.specific_heat_cp,
-    fluid_dynamic_viscosity=LiquidNode1Fluid.dynamic_viscosity,
-    cross_sectional_area=LiquidTube1.cross_sectional_area,
-    mass_flow=LiquidTube1.mass_flow,
-    convection_coefficient=Liquid1Solid1Convection.convection_coefficient,
-)
-
 Coolant2Solid1Convection = Convection(
     "Coolant Node 2 to Solid Node 1 Convection",
     HeatExchanger,
@@ -391,19 +378,6 @@ Coolant2Solid1Convection = Convection(
     fluid_temperature=CoolantNode2Fluid.temperature,
     convective_area=A_coolant_wet,
     convection_coefficient=25,
-)
-
-Coolant2Solid1Gnielinski = Gnielinski(
-    "Coolant Node 2 to Solid Node 1 Gnielinski",
-    HeatExchanger,
-    hydraulic_diameter=CoolantTube2.hydraulic_diameter,
-    friction_factor=CoolantTube2.friction_factor,
-    fluid_conductivity=CoolantNode2Fluid.conductivity,
-    fluid_specific_heat=CoolantNode2Fluid.specific_heat_cp,
-    fluid_dynamic_viscosity=CoolantNode2Fluid.dynamic_viscosity,
-    cross_sectional_area=CoolantTube2.cross_sectional_area,
-    mass_flow=CoolantTube2.mass_flow,
-    convection_coefficient=Coolant2Solid1Convection.convection_coefficient,
 )
 
 Liquid2Solid2Convection = Convection(
@@ -415,19 +389,6 @@ Liquid2Solid2Convection = Convection(
     convection_coefficient=25,
 )
 
-Liquid2Solid2Gnielinski = Gnielinski(
-    "Liquid Node 2 to Solid Node 2 Gnielinski",
-    HeatExchanger,
-    hydraulic_diameter=LiquidTube2.hydraulic_diameter,
-    friction_factor=LiquidTube2.friction_factor,
-    fluid_conductivity=LiquidNode2Fluid.conductivity,
-    fluid_specific_heat=LiquidNode2Fluid.specific_heat_cp,
-    fluid_dynamic_viscosity=LiquidNode2Fluid.dynamic_viscosity,
-    cross_sectional_area=LiquidTube2.cross_sectional_area,
-    mass_flow=LiquidTube2.mass_flow,
-    convection_coefficient=Liquid2Solid2Convection.convection_coefficient,
-)
-
 Coolant1Solid2Convection = Convection(
     "Coolant Node 1 to Solid Node 2 Convection",
     HeatExchanger,
@@ -437,24 +398,118 @@ Coolant1Solid2Convection = Convection(
     convection_coefficient=25,
 )
 
-Coolant1Solid2Gnielinski = Gnielinski(
-    "Coolant Node 1 to Solid Node 2 Gnielinski",
-    HeatExchanger,
-    hydraulic_diameter=CoolantTube1.hydraulic_diameter,
-    friction_factor=CoolantTube1.friction_factor,
-    fluid_conductivity=CoolantNode1Fluid.conductivity,
-    fluid_specific_heat=CoolantNode1Fluid.specific_heat_cp,
-    fluid_dynamic_viscosity=CoolantNode1Fluid.dynamic_viscosity,
-    cross_sectional_area=CoolantTube1.cross_sectional_area,
-    mass_flow=CoolantTube1.mass_flow,
-    convection_coefficient=Coolant1Solid2Convection.convection_coefficient,
+
+# ---- Heat transfer coefficient model ----
+
+GnielinskiOption = ModelOption(
+    "gnielinski",
+    components=[
+        Gnielinski.model(
+            "Liquid Node 1 to Solid Node 1 Gnielinski",
+            hydraulic_diameter=LiquidTube1.hydraulic_diameter,
+            friction_factor=LiquidTube1.friction_factor,
+            fluid_conductivity=LiquidNode1Fluid.conductivity,
+            fluid_specific_heat=LiquidNode1Fluid.specific_heat_cp,
+            fluid_dynamic_viscosity=LiquidNode1Fluid.dynamic_viscosity,
+            cross_sectional_area=LiquidTube1.cross_sectional_area,
+            mass_flow=LiquidTube1.mass_flow,
+            convection_coefficient=Liquid1Solid1Convection.convection_coefficient,
+        ),
+        Gnielinski.model(
+            "Liquid Node 2 to Solid Node 2 Gnielinski",
+            hydraulic_diameter=LiquidTube2.hydraulic_diameter,
+            friction_factor=LiquidTube2.friction_factor,
+            fluid_conductivity=LiquidNode2Fluid.conductivity,
+            fluid_specific_heat=LiquidNode2Fluid.specific_heat_cp,
+            fluid_dynamic_viscosity=LiquidNode2Fluid.dynamic_viscosity,
+            cross_sectional_area=LiquidTube2.cross_sectional_area,
+            mass_flow=LiquidTube2.mass_flow,
+            convection_coefficient=Liquid2Solid2Convection.convection_coefficient,
+        ),
+        Gnielinski.model(
+            "Coolant Node 1 to Solid Node 2 Gnielinski",
+            hydraulic_diameter=CoolantTube1.hydraulic_diameter,
+            friction_factor=CoolantTube1.friction_factor,
+            fluid_conductivity=CoolantNode1Fluid.conductivity,
+            fluid_specific_heat=CoolantNode1Fluid.specific_heat_cp,
+            fluid_dynamic_viscosity=CoolantNode1Fluid.dynamic_viscosity,
+            cross_sectional_area=CoolantTube1.cross_sectional_area,
+            mass_flow=CoolantTube1.mass_flow,
+            convection_coefficient=Coolant1Solid2Convection.convection_coefficient,
+        ),
+        Gnielinski.model(
+            "Coolant Node 2 to Solid Node 1 Gnielinski",
+            hydraulic_diameter=CoolantTube2.hydraulic_diameter,
+            friction_factor=CoolantTube2.friction_factor,
+            fluid_conductivity=CoolantNode2Fluid.conductivity,
+            fluid_specific_heat=CoolantNode2Fluid.specific_heat_cp,
+            fluid_dynamic_viscosity=CoolantNode2Fluid.dynamic_viscosity,
+            cross_sectional_area=CoolantTube2.cross_sectional_area,
+            mass_flow=CoolantTube2.mass_flow,
+            convection_coefficient=Coolant2Solid1Convection.convection_coefficient,
+        ),
+    ],
 )
 
-# Conduction: q = kA/L * (T2 - T1)
-# Positive TubeConduction.heat_rate is heat into TubeNode1.
-#
-# Convection: q = hA * (Tf - Ts)
-# Positive convection heat_rate is heat into the solid surface from the fluid.
+DittusBoelterOption = ModelOption(
+    "dittus_boelter",
+    components=[
+        DittusBoelter.model(
+            "Liquid Node 1 to Solid Node 1 Dittus-Boelter",
+            hydraulic_diameter=LiquidTube1.hydraulic_diameter,
+            fluid_conductivity=LiquidNode1Fluid.conductivity,
+            fluid_specific_heat=LiquidNode1Fluid.specific_heat_cp,
+            fluid_dynamic_viscosity=LiquidNode1Fluid.dynamic_viscosity,
+            cross_sectional_area=LiquidTube1.cross_sectional_area,
+            mass_flow=LiquidTube1.mass_flow,
+            convection_coefficient=Liquid1Solid1Convection.convection_coefficient,
+        ),
+        DittusBoelter.model(
+            "Liquid Node 2 to Solid Node 2 Dittus-Boelter",
+            hydraulic_diameter=LiquidTube2.hydraulic_diameter,
+            fluid_conductivity=LiquidNode2Fluid.conductivity,
+            fluid_specific_heat=LiquidNode2Fluid.specific_heat_cp,
+            fluid_dynamic_viscosity=LiquidNode2Fluid.dynamic_viscosity,
+            cross_sectional_area=LiquidTube2.cross_sectional_area,
+            mass_flow=LiquidTube2.mass_flow,
+            convection_coefficient=Liquid2Solid2Convection.convection_coefficient,
+        ),
+        DittusBoelter.model(
+            "Coolant Node 1 to Solid Node 2 Dittus-Boelter",
+            hydraulic_diameter=CoolantTube1.hydraulic_diameter,
+            fluid_conductivity=CoolantNode1Fluid.conductivity,
+            fluid_specific_heat=CoolantNode1Fluid.specific_heat_cp,
+            fluid_dynamic_viscosity=CoolantNode1Fluid.dynamic_viscosity,
+            cross_sectional_area=CoolantTube1.cross_sectional_area,
+            mass_flow=CoolantTube1.mass_flow,
+            convection_coefficient=Coolant1Solid2Convection.convection_coefficient,
+        ),
+        DittusBoelter.model(
+            "Coolant Node 2 to Solid Node 1 Dittus-Boelter",
+            hydraulic_diameter=CoolantTube2.hydraulic_diameter,
+            fluid_conductivity=CoolantNode2Fluid.conductivity,
+            fluid_specific_heat=CoolantNode2Fluid.specific_heat_cp,
+            fluid_dynamic_viscosity=CoolantNode2Fluid.dynamic_viscosity,
+            cross_sectional_area=CoolantTube2.cross_sectional_area,
+            mass_flow=CoolantTube2.mass_flow,
+            convection_coefficient=Coolant2Solid1Convection.convection_coefficient,
+        ),
+    ],
+)
+
+HeatTransferModel = Model(
+    "Heat Transfer Correlation",
+    HeatExchanger,
+    GnielinskiOption,
+    DittusBoelterOption,
+    order=[
+        "gnielinski",
+        "dittus_boelter",
+    ],
+)
+
+
+# ---- Heat-rate connections ----
 
 TubeNode1.heat_rate = (
     TubeConduction.heat_rate
@@ -492,6 +547,9 @@ HeatExchanger.track("Solid Node 2 Temperature", TubeNode2.temperature)
 # ---- Solver ----
 
 solution = SteadyState(HeatExchanger).solve(
+    model="Heat Transfer Correlation",
+    evaluate_all_model_options=True,
     verbose=True,
     print_solution=True,
+    filename="test.xlsx",
 )
