@@ -2,17 +2,16 @@ from System import *
 from Solvers import *
 from constants import *
 
-
 ThermalSystem = Network("Thermal")
 
+D = 0.5 * IN_TO_M
+L = 10.0 * IN_TO_M
 
-def harmonic_mean(a, b):
-    return 2*a*b/(a+b)
-
-
+flow_area = (np.pi / 4.0) * D**2
+wetted_area = np.pi * D * L
 
 TubeMaterial = MaterialLookup(
-    "Node Material",
+    "Tube Material",
     ThermalSystem,
     "718",
 )
@@ -22,31 +21,26 @@ SourceFluid = FluidLookup(
     ThermalSystem,
     "lox",
     pressure=5e5,
-    quality=0
+    quality=0,
 )
 
 VolFluid = FluidLookup(
-    "Fluid Source",
+    "Fluid Volume",
     ThermalSystem,
     "lox",
     pressure=1e5,
-    quality=0
+    quality=0,
 )
 
-
-
-
-
-
 TubeFlow = DarcyWeisbach(
-    "Tub Flow",
+    "Tube Flow",
     ThermalSystem,
     mass_flow=5,
     upstream_pressure=SourceFluid.pressure,
     downstream_pressure=VolFluid.pressure,
-    length=10 * IN_TO_M,
-    cross_sectional_area=(np.pi/4) * (0.5*IN_TO_M)**2,
-    hydraulic_diameter=0.5*IN_TO_M,
+    length=L,
+    cross_sectional_area=flow_area,
+    hydraulic_diameter=D,
     density=SourceFluid.density,
     friction_factor=2e-5,
 )
@@ -59,7 +53,7 @@ TubeFriction = Colebrook(
     hydraulic_diameter=TubeFlow.hydraulic_diameter,
     dynamic_viscosity=SourceFluid.dynamic_viscosity,
     cross_sectional_area=TubeFlow.cross_sectional_area,
-    roughness=1e-9
+    roughness=1e-9,
 )
 
 Tube = Solid(
@@ -68,17 +62,17 @@ Tube = Solid(
     temperature=TubeMaterial.temperature,
 )
 
-FlowConvection = Convection(
-    "Flow Convection",
+LOXConvection = Convection(
+    "LOX Convection",
     ThermalSystem,
     surface_temperature=Tube.temperature,
     fluid_temperature=SourceFluid.temperature,
-    convective_area=2 * TubeFlow.cross_sectional_area,
-    heat_rate=Tube.heat_rate_in,
+    convective_area=wetted_area,
+    convection_coefficient=25,
 )
 
-FlowDittus = DittusBoelter(
-    "Flow Dittus",
+LOXDittus = DittusBoelter(
+    "LOX Dittus",
     ThermalSystem,
     hydraulic_diameter=TubeFlow.hydraulic_diameter,
     fluid_conductivity=SourceFluid.conductivity,
@@ -86,18 +80,19 @@ FlowDittus = DittusBoelter(
     fluid_dynamic_viscosity=SourceFluid.dynamic_viscosity,
     cross_sectional_area=TubeFlow.cross_sectional_area,
     mass_flow=TubeFlow.mass_flow,
-    convection_coefficient=FlowConvection.convection_coefficient
+    convection_coefficient=LOXConvection.convection_coefficient,
 )
 
 AirConvection = Convection(
-    "Flow Convection",
+    "Air Convection",
     ThermalSystem,
     surface_temperature=Tube.temperature,
     fluid_temperature=293.15,
-    convective_area=2 * TubeFlow.cross_sectional_area,
+    convective_area=wetted_area,
     convection_coefficient=25,
-    heat_rate=Tube.heat_rate_out,
 )
+
+Tube.heat_rate = LOXConvection.heat_rate + AirConvection.heat_rate
 
 solution = SteadyState(ThermalSystem).solve(
     verbose=True,

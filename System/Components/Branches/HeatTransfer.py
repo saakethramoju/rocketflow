@@ -33,7 +33,7 @@ class Conduction(Component):
         T1 = self.temperature1.value
         T2 = self.temperature2.value
 
-        self.heat_rate.value = k * A / L * (T1 - T2)
+        self.heat_rate.value = k * A / L * (T2 - T1)
 
 
 
@@ -122,7 +122,7 @@ class Radiation(Component):
 
         self.heat_rate.value = (
             self.SIGMA
-            * (T1**4 - T2**4)
+            * (T2**4 - T1**4)
             / denominator
         )
 
@@ -193,7 +193,7 @@ class AmbientRadiation(Component):
         self.heat_rate.value = (
             self.SIGMA
             * A
-            * (Ts**4 - Tamb**4)
+            * (Tamb**4 - Ts**4)
             / denominator
         )
 
@@ -219,7 +219,7 @@ class Convection(Component):
         surface_temperature: State,
         fluid_temperature: State | float,
         convective_area: State | float,
-        convection_coefficient: State | float | None = None,
+        convection_coefficient: State | float,
         heat_rate: State | None = None,
     ):
         self.setup()
@@ -236,4 +236,4 @@ class Convection(Component):
                 f"{self.name}: convective_area must be greater than zero. Got {A}."
             )
 
-        self.heat_rate.value = h * A * (Ts - Tf)
+        self.heat_rate.value = h * A * (Tf - Ts)
