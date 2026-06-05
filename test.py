@@ -1,12 +1,10 @@
 from System import *
 from Solvers import *
 from constants import *
-from matprotlib import Steel
+from thermoprop import Material
 
-T = 300
-steel = Steel("1018 Carbon")
-k = steel.get("thermal_conductivity", T)
-cp = steel.get("specific_heat", T)
+steel = Material("4140", temperature=298.15, allow_extrapolation=True)
+k = steel.thermal_conductivity
 
 L = 0.5 * IN_TO_M
 D = 1 * IN_TO_M
@@ -39,12 +37,15 @@ Metal = Solid(
     heat_rate_in=Rod1.heat_rate
 )
 
+steel = Material("4140", temperature=NodeTemp.value, allow_extrapolation=True)
+k2 = steel.thermal_conductivity
+
 Rod2 = SolidConductor(
     "Rod 2",
     ThermalSystem,
     upstream_temperature=Metal.temperature,
     downstream_temperature=300,
-    thermal_conductivity=k,
+    thermal_conductivity=2,
     length=L,
     cross_sectional_area=A,
     heat_rate=Metal.heat_rate_out

@@ -102,3 +102,9 @@ System/__pycache__/Model.cpython-313.pyc
 System/Components/Fluids/__pycache__/PropellantLookups.cpython-313.pyc
 System/Components/Nodes/__pycache__/Solids.cpython-313.pyc
 System/Components/Branches/__pycache__/ThermalConductors.cpython-313.pyc
+System/Components/Lookups/__pycache__/__init__.cpython-313.pyc
+System/Components/Lookups/__pycache__/FluidUtilities.cpython-313.pyc
+System/Components/Lookups/__pycache__/IdealGasLookups.cpython-313.pyc
+System/Components/Lookups/__pycache__/PropellantLookups.cpython-313.pyc
+System/Components/Lookups/__pycache__/PTLookups.cpython-313.pyc
+System/Components/Lookups/__pycache__/RealFluidLookups.cpython-313.pyc
