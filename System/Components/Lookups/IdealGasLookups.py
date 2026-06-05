@@ -689,6 +689,57 @@ class IdealGasLookup(Component):
         self._last_flash_values = None
         self._property_cache.clear()
 
+
+    @classmethod
+    def supported_properties(cls) -> list[str]:
+        return IdealGas.supported_properties()
+
+
+    @classmethod
+    def show_supported_properties(cls) -> list[str]:
+        return IdealGas.show_supported_properties()
+
+
+    @classmethod
+    def supports_property(cls, property_name: str) -> bool:
+        return IdealGas.supports_property(property_name)
+        
+    @classmethod
+    def supported_inputs(cls) -> list[str]:
+        return list(cls._THERMO_NAMES)
+
+
+    @classmethod
+    def show_supported_inputs(cls) -> list[str]:
+        inputs = cls.supported_inputs()
+
+        for name in inputs:
+            print(name)
+
+        return inputs
+
+
+    @classmethod
+    def supported_flash_pairs(cls) -> list[str]:
+        pairs = [
+            "-".join(ordered_names)
+            for _, ordered_names in cls._FLASH_PAIR_SETTERS.values()
+        ]
+
+        pairs.extend(cls._SINGLE_FLASH_NAMES)
+
+        return sorted(pairs)
+
+
+    @classmethod
+    def show_supported_flash_pairs(cls) -> list[str]:
+        pairs = cls.supported_flash_pairs()
+
+        for pair in pairs:
+            print(pair)
+
+        return pairs
+
     @property
     def ignored_export_attributes(self) -> set[str]:
         return super().ignored_export_attributes | {

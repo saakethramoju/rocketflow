@@ -448,6 +448,53 @@ class FluidLookup(Component):
                 self._last_composition_values,
             )
         )
+        
+    @classmethod
+    def supported_properties(cls) -> list[str]:
+        return Fluid.supported_properties()
+
+
+    @classmethod
+    def show_supported_properties(cls) -> list[str]:
+        return Fluid.show_supported_properties()
+
+
+    @classmethod
+    def supports_property(cls, property_name: str) -> bool:
+        return Fluid.supports_property(property_name)
+    
+
+    @classmethod
+    def supported_inputs(cls) -> list[str]:
+        return list(cls._THERMO_NAMES)
+
+
+    @classmethod
+    def show_supported_inputs(cls) -> list[str]:
+        inputs = cls.supported_inputs()
+
+        for name in inputs:
+            print(name)
+
+        return inputs
+
+
+    @classmethod
+    def supported_flash_pairs(cls) -> list[str]:
+        return sorted(
+            "-".join(ordered_names)
+            for _, ordered_names in cls._FLASH_PAIR_SETTERS.values()
+        )
+
+
+    @classmethod
+    def show_supported_flash_pairs(cls) -> list[str]:
+        pairs = cls.supported_flash_pairs()
+
+        for pair in pairs:
+            print(pair)
+
+        return pairs
 
     @property
     def ignored_export_attributes(self) -> set[str]:
