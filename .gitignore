@@ -108,3 +108,5 @@ System/Components/Lookups/__pycache__/IdealGasLookups.cpython-313.pyc
 System/Components/Lookups/__pycache__/PropellantLookups.cpython-313.pyc
 System/Components/Lookups/__pycache__/PTLookups.cpython-313.pyc
 System/Components/Lookups/__pycache__/RealFluidLookups.cpython-313.pyc
+System/Components/Lookups/__pycache__/MaterialLookups.cpython-313.pyc
+Exceptions/__pycache__/LookupExceptions.cpython-313.pyc

@@ -1,2 +1,0 @@
-class InvalidThermoStateError(Exception):
-    pass
