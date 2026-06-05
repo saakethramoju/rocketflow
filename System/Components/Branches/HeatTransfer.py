@@ -47,6 +47,9 @@ class Radiation(Component):
     Supports arbitrary surface emissivities, radiating areas, and view
     factors. Positive heat_rate indicates net radiative heat transfer
     from temperature1 to temperature2.
+
+    This can be good for surface-to-sufrace contact radiation or vacuum
+    jacketed tube radiation, for example.
     """
 
     SIGMA = 5.670374419e-8  # W/m^2-K^4
@@ -127,6 +130,7 @@ class Radiation(Component):
 
 
 
+
 class AmbientRadiation(Component):
     """
     Radiation exchange between a surface and a surrounding ambient enclosure.
@@ -192,6 +196,9 @@ class AmbientRadiation(Component):
             * (Ts**4 - Tamb**4)
             / denominator
         )
+
+
+
 
 
 
