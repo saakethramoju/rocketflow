@@ -2,7 +2,7 @@ from System import *
 from Solvers import *
 from constants import *
 
-
+# Counter-flow HEX
 HeatExchanger = Network("Heat Exchanger")
 
 # ---- Geometry ----
@@ -37,10 +37,10 @@ metal = "c101"
 
 
 def harmonic_mean(a, b):
-    return 2 * a * b / (a + b)
+    return 2.0 * a * b / (a + b)
 
 
-# ---- Fluids ----
+# ---- Fluid sources / pressure boundaries ----
 
 LiquidSource = FluidLookup(
     "Liquid Source",
@@ -55,7 +55,7 @@ LiquidNode1Fluid = FluidLookup(
     HeatExchanger,
     hot_fluid,
     pressure=5e5,
-    temperature=560,
+    temperature=490,
     flash_values=("pressure", "enthalpy"),
 )
 
@@ -64,18 +64,15 @@ LiquidNode2Fluid = FluidLookup(
     HeatExchanger,
     hot_fluid,
     pressure=4e5,
-    temperature=530,
+    temperature=480,
     flash_values=("pressure", "enthalpy"),
 )
 
-LiquidDrain = FluidLookup(
+LiquidDrain = PressureBoundary(
     "Liquid Drain",
     HeatExchanger,
-    hot_fluid,
     pressure=3e5,
-    temperature=400,
 )
-
 
 CoolantSource = FluidLookup(
     "Coolant Source",
@@ -90,7 +87,7 @@ CoolantNode1Fluid = FluidLookup(
     HeatExchanger,
     coolant,
     pressure=16e5,
-    temperature=310,
+    temperature=305,
     flash_values=("pressure", "enthalpy"),
 )
 
@@ -99,16 +96,14 @@ CoolantNode2Fluid = FluidLookup(
     HeatExchanger,
     coolant,
     pressure=12e5,
-    temperature=320,
+    temperature=310,
     flash_values=("pressure", "enthalpy"),
 )
 
-CoolantDrain = FluidLookup(
+CoolantDrain = PressureBoundary(
     "Coolant Drain",
     HeatExchanger,
-    coolant,
     pressure=8e5,
-    temperature=330,
 )
 
 
@@ -455,11 +450,11 @@ Coolant1Solid2Gnielinski = Gnielinski(
     convection_coefficient=Coolant1Solid2Convection.convection_coefficient,
 )
 
-# Conduction: your Conduction gives q = kA/L * (T2 - T1),
-# so positive TubeConduction.heat_rate is heat into TubeNode1.
+# Conduction: q = kA/L * (T2 - T1)
+# Positive TubeConduction.heat_rate is heat into TubeNode1.
 #
-# Convection assumed q = hA * (T_surface - T_fluid),
-# so positive convection heat_rate leaves the solid and enters the fluid.
+# Convection: q = hA * (Tf - Ts)
+# Positive convection heat_rate is heat into the solid surface from the fluid.
 
 TubeNode1.heat_rate = (
     TubeConduction.heat_rate
@@ -479,17 +474,16 @@ LiquidNode2.heat_rate = -Liquid2Solid2Convection.heat_rate
 CoolantNode1.heat_rate = -Coolant1Solid2Convection.heat_rate
 CoolantNode2.heat_rate = -Coolant2Solid1Convection.heat_rate
 
+
 # ---- Tracking ----
 
-HeatExchanger.track("Liquid Source Temperature", LiquidSource.temperature)
+HeatExchanger.track("Liquid Inlet Temperature", LiquidSource.temperature)
 HeatExchanger.track("Liquid Node 1 Temperature", LiquidNode1Fluid.temperature)
-HeatExchanger.track("Liquid Node 2 Temperature", LiquidNode2Fluid.temperature)
-HeatExchanger.track("Liquid Drain Temperature", LiquidDrain.temperature)
+HeatExchanger.track("Liquid Outlet Temperature", LiquidNode2Fluid.temperature)
 
-HeatExchanger.track("Coolant Source Temperature", CoolantSource.temperature)
+HeatExchanger.track("Coolant Inlet Temperature", CoolantSource.temperature)
 HeatExchanger.track("Coolant Node 1 Temperature", CoolantNode1Fluid.temperature)
-HeatExchanger.track("Coolant Node 2 Temperature", CoolantNode2Fluid.temperature)
-HeatExchanger.track("Coolant Drain Temperature", CoolantDrain.temperature)
+HeatExchanger.track("Coolant Outlet Temperature", CoolantNode2Fluid.temperature)
 
 HeatExchanger.track("Solid Node 1 Temperature", TubeNode1.temperature)
 HeatExchanger.track("Solid Node 2 Temperature", TubeNode2.temperature)
@@ -501,112 +495,3 @@ solution = SteadyState(HeatExchanger).solve(
     verbose=True,
     print_solution=True,
 )
-
-
-
-
-
-
-
-
-'''
-ThermalSystem = Network("Thermal")
-
-D = 0.5 * IN_TO_M
-L = 10.0 * IN_TO_M
-
-flow_area = (np.pi / 4.0) * D**2
-wetted_area = np.pi * D * L
-
-TubeMaterial = MaterialLookup(
-    "Tube Material",
-    ThermalSystem,
-    "718",
-)
-
-SourceFluid = FluidLookup(
-    "Fluid Source",
-    ThermalSystem,
-    "lox",
-    pressure=5e5,
-    quality=0,
-)
-
-VolFluid = FluidLookup(
-    "Fluid Volume",
-    ThermalSystem,
-    "lox",
-    pressure=1e5,
-    quality=0,
-)
-
-TubeFlow = DarcyWeisbach(
-    "Tube Flow",
-    ThermalSystem,
-    mass_flow=5,
-    upstream_pressure=SourceFluid.pressure,
-    downstream_pressure=VolFluid.pressure,
-    length=L,
-    cross_sectional_area=flow_area,
-    hydraulic_diameter=D,
-    density=SourceFluid.density,
-    friction_factor=2e-5,
-)
-
-TubeFriction = Colebrook(
-    "Tube Friction",
-    ThermalSystem,
-    mass_flow=TubeFlow.mass_flow,
-    friction_factor=TubeFlow.friction_factor,
-    hydraulic_diameter=TubeFlow.hydraulic_diameter,
-    dynamic_viscosity=SourceFluid.dynamic_viscosity,
-    cross_sectional_area=TubeFlow.cross_sectional_area,
-    roughness=1e-9,
-)
-
-Tube = Solid(
-    "Tube",
-    ThermalSystem,
-    temperature=TubeMaterial.temperature,
-)
-
-LOXConvection = Convection(
-    "LOX Convection",
-    ThermalSystem,
-    surface_temperature=Tube.temperature,
-    fluid_temperature=SourceFluid.temperature,
-    convective_area=wetted_area,
-    convection_coefficient=25,
-)
-
-
-LOXGnielinski = Gnielinski(
-    "LOX Gnielinski",
-    ThermalSystem,
-    hydraulic_diameter=TubeFlow.hydraulic_diameter,
-    friction_factor=TubeFriction.friction_factor,
-    fluid_conductivity=SourceFluid.conductivity,
-    fluid_specific_heat=SourceFluid.specific_heat_cp,
-    fluid_dynamic_viscosity=SourceFluid.dynamic_viscosity,
-    cross_sectional_area=TubeFlow.cross_sectional_area,
-    mass_flow=TubeFlow.mass_flow,
-    convection_coefficient=LOXConvection.convection_coefficient,  
-)
-
-
-AirConvection = Convection(
-    "Air Convection",
-    ThermalSystem,
-    surface_temperature=Tube.temperature,
-    fluid_temperature=293.15,
-    convective_area=wetted_area,
-    convection_coefficient=25,
-)
-
-Tube.heat_rate = LOXConvection.heat_rate + AirConvection.heat_rate
-
-solution = SteadyState(ThermalSystem).solve(
-    verbose=True,
-    print_solution=True,
-)
-'''
