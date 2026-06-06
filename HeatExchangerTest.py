@@ -47,7 +47,7 @@ LiquidSource = FluidLookup(
     HeatExchanger,
     hot_fluid,
     pressure=6e5,
-    temperature=500,
+    temperature=1000,
 )
 
 LiquidNode1Fluid = FluidLookup(
