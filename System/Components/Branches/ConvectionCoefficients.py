@@ -93,11 +93,8 @@ class Gnielinski(Component):
     ):
         self.setup()
 
-        if not reynolds_number is None:
-            self.Re_given = True
-
-        if not prandtl_number is None:
-            self.Pr_given = True
+        self.Re_given = reynolds_number is not None
+        self.Pr_given = prandtl_number is not None
 
     def evaluate_states(self):
         Dh = self.hydraulic_diameter.value
@@ -228,11 +225,8 @@ class SiederTate(Component):
     ):
         self.setup()
 
-        if not reynolds_number is None:
-            self.Re_given = True
-
-        if not prandtl_number is None:
-            self.Pr_given = True
+        self.Re_given = reynolds_number is not None
+        self.Pr_given = prandtl_number is not None
 
     def evaluate_states(self):
         Dh = self.hydraulic_diameter.value
@@ -379,11 +373,8 @@ class DittusBoelter(Component):
     ):
         self.setup()
 
-        if not reynolds_number is None:
-            self.Re_given = True
-
-        if not prandtl_number is None:
-            self.Pr_given = True
+        self.Re_given = reynolds_number is not None
+        self.Pr_given = prandtl_number is not None
 
     def evaluate_states(self):
         Dh = self.hydraulic_diameter.value
