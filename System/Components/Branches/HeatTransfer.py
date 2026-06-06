@@ -245,3 +245,147 @@ class Convection(Component):
             raise ValueError(f"{self.name}: convective_area must be positive. Got {A}.")
 
         self.heat_rate.value = h * A * (Tf - Ts)
+
+
+
+
+
+
+
+class TemperatureRecoveryFactor(Component):
+    """
+    Calculates the temperature recovery factor.
+
+    For compressible boundary-layer heat transfer, the adiabatic wall
+    temperature is commonly written as:
+
+        T_aw = T + r * (T0 - T)
+
+    where r is the recovery factor.
+
+    For turbulent boundary layers:
+
+        r = Pr^(1/3)
+
+    For laminar boundary layers:
+
+        r = Pr^(1/2)
+
+    If no Prandtl number is provided, r defaults to 1.0.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        prandtl_number: State | None = None,
+        recovery_factor: State | None = None,
+        turbulent: bool = True,
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        if self.prandtl_number is None or not self.prandtl_number.is_assigned:
+            self.recovery_factor.value = 1.0
+            return
+
+        Pr = self.prandtl_number.value
+
+        if Pr <= 0.0:
+            raise ValueError(
+                f"{self.name}: prandtl_number must be greater than zero. Got {Pr}."
+            )
+
+        if self.turbulent:
+            self.recovery_factor.value = Pr ** (1.0 / 3.0)
+        else:
+            self.recovery_factor.value = Pr ** 0.5
+
+
+
+
+
+
+
+
+class AdiabaticWallTemperature(Component):
+    """
+    Calculates the adiabatic wall temperature.
+
+    The adiabatic wall temperature is the temperature an insulated
+    wall would attain when exposed to the flow:
+
+        T_aw = T + r (T0 - T)
+
+    where
+
+        T_aw = adiabatic wall temperature
+        T    = static temperature
+        T0   = total (stagnation) temperature
+        r    = recovery factor
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        total_temperature: State,
+        static_temperature: State,
+        recovery_factor: State,
+        adiabatic_wall_temperature: State | None = None,
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        T0 = self.total_temperature.value
+        T = self.static_temperature.value
+        r = self.recovery_factor.value
+
+        self.adiabatic_wall_temperature.value = (
+            T + r * (T0 - T)
+        )
+
+
+
+
+
+
+
+class EckertReferenceTemperature(Component):
+    """
+    Calculates Eckert's reference (film) temperature.
+
+    The reference temperature is used to evaluate fluid properties
+    within a compressible turbulent boundary layer:
+
+        T_f = 0.5 T_w + 0.28 T + 0.22 T_aw
+
+    where
+
+        T_f  = Eckert reference temperature
+        T_w  = wall temperature
+        T    = static fluid temperature
+        T_aw = adiabatic wall temperature
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        wall_temperature: State,
+        static_temperature: State,
+        adiabatic_wall_temperature: State,
+        reference_temperature: State | None = None,
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        Tw = self.wall_temperature.value
+        T = self.static_temperature.value
+        Taw = self.adiabatic_wall_temperature.value
+
+        self.reference_temperature.value = (
+            0.5 * Tw
+            + 0.28 * T
+            + 0.22 * Taw
+        )

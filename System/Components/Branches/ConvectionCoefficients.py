@@ -85,9 +85,19 @@ class Gnielinski(Component):
         fluid_dynamic_viscosity: State,
         cross_sectional_area: State | float,
         mass_flow: State,
+        reynolds_number: State | float | None = None,
+        prandtl_number: State | float | None = None,
+        nusselt_number: State | float | None = None,
+        stanton_number: State | float | None = None,
         convection_coefficient: State | None = None,
     ):
         self.setup()
+
+        if not reynolds_number is None:
+            self.Re_given = True
+
+        if not prandtl_number is None:
+            self.Pr_given = True
 
     def evaluate_states(self):
         Dh = self.hydraulic_diameter.value
@@ -108,12 +118,27 @@ class Gnielinski(Component):
                 f"{self.name}: cross_sectional_area must be greater than zero. Got {A}."
             )
 
-        Re = mdot * Dh / (mu * A)
-        Pr = mu * Cp / k
+        if self.Re_given:
+            Re = self.reynolds_number.value
+        else:
+            Re = mdot * Dh / (mu * A)
+            self.reynolds_number.value = Re
+
+        if self.Pr_given:
+            Pr = self.reynolds_number.value
+        else:
+            Pr = mu * Cp / k
+            self.prandtl_number.value = Pr
 
         Nu = (f / 8.0) * (Re - 1000.0) * Pr / (1.0 + 12.7 * (f / 8.0) ** 0.5 * (Pr ** (2.0 / 3.0) - 1.0))
 
         self.convection_coefficient.value = Nu * k / Dh
+
+        self.nusselt_number.value = Nu
+        self.stanton_number.value = Nu / (Re*Pr)
+
+
+
 
 
 
@@ -195,9 +220,19 @@ class SiederTate(Component):
         wall_fluid_dynamic_viscosity: State,
         cross_sectional_area: State | float,
         mass_flow: State,
+        reynolds_number: State | float | None = None,
+        prandtl_number: State | float | None = None,
+        nusselt_number: State | float | None = None,
+        stanton_number: State | float | None = None,
         convection_coefficient: State | None = None,
     ):
         self.setup()
+
+        if not reynolds_number is None:
+            self.Re_given = True
+
+        if not prandtl_number is None:
+            self.Pr_given = True
 
     def evaluate_states(self):
         Dh = self.hydraulic_diameter.value
@@ -218,11 +253,28 @@ class SiederTate(Component):
                 f"{self.name}: cross_sectional_area must be greater than zero. Got {A}."
             )
 
-        Re = mdot * Dh / (mu * A)
-        Pr = mu * Cp / k
+        if self.Re_given:
+            Re = self.reynolds_number.value
+        else:
+            Re = mdot * Dh / (mu * A)
+            self.reynolds_number.value = Re
+
+        if self.Pr_given:
+            Pr = self.reynolds_number.value
+        else:
+            Pr = mu * Cp / k
+            self.prandtl_number.value = Pr
+
+
         Nu = 0.027 * Re**0.8 * Pr**(1.0 / 3.0) * (mu / mu_w)**0.14
 
         self.convection_coefficient.value = Nu * k / Dh
+
+        self.nusselt_number.value = Nu
+        self.stanton_number.value = Nu / (Re*Pr)
+
+
+
 
 
 
@@ -319,9 +371,19 @@ class DittusBoelter(Component):
         fluid_dynamic_viscosity: State,
         cross_sectional_area: State | float,
         mass_flow: State,
+        reynolds_number: State | float | None = None,
+        prandtl_number: State | float | None = None,
+        nusselt_number: State | float | None = None,
+        stanton_number: State | float | None = None,
         convection_coefficient: State | None = None,
     ):
         self.setup()
+
+        if not reynolds_number is None:
+            self.Re_given = True
+
+        if not prandtl_number is None:
+            self.Pr_given = True
 
     def evaluate_states(self):
         Dh = self.hydraulic_diameter.value
@@ -341,8 +403,28 @@ class DittusBoelter(Component):
                 f"{self.name}: cross_sectional_area must be greater than zero. Got {A}."
             )
 
-        Re = mdot * Dh / (mu * A)
-        Pr = mu * Cp / k
+        if self.Re_given:
+            Re = self.reynolds_number.value
+        else:
+            Re = mdot * Dh / (mu * A)
+            self.reynolds_number.value = Re
+
+        if self.Pr_given:
+            Pr = self.reynolds_number.value
+        else:
+            Pr = mu * Cp / k
+            self.prandtl_number.value = Pr
+
+        
         Nu = 0.023 * Re**0.8 * Pr**(1.0 / 3.0)
 
         self.convection_coefficient.value = Nu * k / Dh
+
+        self.nusselt_number.value = Nu
+        self.stanton_number.value = Nu / (Re*Pr)
+
+
+
+
+
+
