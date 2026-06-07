@@ -695,7 +695,6 @@ class Bartz(Component):
 
 
 
-
 class NaturalConvection(Component):
     """
     Empirical natural-convection heat transfer coefficient.
@@ -780,6 +779,89 @@ class NaturalConvection(Component):
             n = 0.33
 
         Nu = c * Ra**n
+
+        self.grashof_number.value = Gr
+        self.prandtl_number.value = Pr
+        self.rayleigh_number.value = Ra
+        self.nusselt_number.value = Nu
+        self.convection_coefficient.value = Nu * k / L
+
+
+
+
+
+class ChurchillChu(Component):
+    """
+    Churchill-Chu natural-convection heat transfer coefficient.
+
+    Correlation
+    -----------
+        Gr = g beta |Tw - Tf| L^3 rho^2 / mu^2
+
+        Pr = Cp mu / k
+
+        Ra = Gr Pr
+
+        Nu = (0.825 + 0.387 Ra^(1/6) / (1 + (0.492 / Pr)^(9/16))^(8/27))^2
+
+        h = Nu k / L
+
+    Notes
+    -----
+    Fluid properties should be evaluated at the film temperature:
+
+        Tfilm = 0.5 * (Tw + Tf)
+
+    beta is the volumetric thermal expansion coefficient [1/K].
+    For an ideal gas, beta = 1 / Tfilm.
+
+    Recommended Validity Range
+    --------------------------
+    * 1e-1 <= Ra <= 1e12
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        wall_temperature: State,
+        fluid_temperature: State,
+        characteristic_length: State | float,
+        fluid_density: State,
+        fluid_specific_heat: State,
+        fluid_dynamic_viscosity: State,
+        fluid_conductivity: State,
+        thermal_expansion_coefficient: State,
+        gravity: State | float = 9.80665,
+        grashof_number: State | float | None = None,
+        prandtl_number: State | float | None = None,
+        rayleigh_number: State | float | None = None,
+        nusselt_number: State | float | None = None,
+        convection_coefficient: State | None = None,
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        Tw = self.wall_temperature.value
+        Tf = self.fluid_temperature.value
+        L = self.characteristic_length.value
+        rho = self.fluid_density.value
+        Cp = self.fluid_specific_heat.value
+        mu = self.fluid_dynamic_viscosity.value
+        k = self.fluid_conductivity.value
+        beta = self.thermal_expansion_coefficient.value
+        g = self.gravity.value
+
+        if L <= 0.0:
+            raise ValueError(
+                f"{self.name}: characteristic_length must be greater than zero. Got {L}."
+            )
+
+        Gr = g * beta * abs(Tw - Tf) * L**3 * rho**2 / mu**2
+        Pr = Cp * mu / k
+        Ra = Gr * Pr
+
+        Nu = (0.825 + 0.387 * Ra**(1.0 / 6.0) / (1.0 + (0.492 / Pr)**(9.0 / 16.0))**(8.0 / 27.0))**2
 
         self.grashof_number.value = Gr
         self.prandtl_number.value = Pr
