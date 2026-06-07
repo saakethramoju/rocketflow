@@ -123,7 +123,7 @@ class Gnielinski(Component):
             self.reynolds_number.value = Re
 
         if self.Pr_given:
-            Pr = self.reynolds_number.value
+            Pr = self.prandtl_number.value
         else:
             Pr = mu * Cp / k
             self.prandtl_number.value = Pr
@@ -135,6 +135,99 @@ class Gnielinski(Component):
         self.nusselt_number.value = Nu
         self.stanton_number.value = Nu / (Re*Pr)
 
+
+
+
+
+
+
+class Petukhov(Component):
+    """
+    Petukhov turbulent forced-convection heat transfer coefficient.
+
+    Correlation
+    -----------
+        Nu = ((f / 8) Re Pr)
+             / (1.07 + 12.7 sqrt(f / 8) (Pr^(2/3) - 1))
+
+        Re = mdot * Dh / (mu * A)
+
+        Pr = cp * mu / k
+
+        h = Nu * k / Dh
+
+    Notes
+    -----
+    This correlation uses the Darcy friction factor, not the Fanning
+    friction factor.
+
+    Recommended Validity Range
+    --------------------------
+    * 10,000 <= Re <= 5×10⁶
+    * 0.5 <= Pr <= 2,000
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        mass_flow: State,
+        hydraulic_diameter: State | float,
+        friction_factor: State | float,
+        fluid_conductivity: State,
+        fluid_specific_heat: State,
+        fluid_dynamic_viscosity: State,
+        cross_sectional_area: State | float,
+        reynolds_number: State | float | None = None,
+        prandtl_number: State | float | None = None,
+        nusselt_number: State | float | None = None,
+        stanton_number: State | float | None = None,
+        convection_coefficient: State | None = None,
+    ):
+        self.setup()
+
+        self.Re_given = reynolds_number is not None
+        self.Pr_given = prandtl_number is not None
+
+    def evaluate_states(self):
+        Dh = self.hydraulic_diameter.value
+        f = self.friction_factor.value
+        k = self.fluid_conductivity.value
+        Cp = self.fluid_specific_heat.value
+        mu = self.fluid_dynamic_viscosity.value
+        A = self.cross_sectional_area.value
+        mdot = abs(self.mass_flow.value)
+
+        if Dh <= 0.0:
+            raise ValueError(
+                f"{self.name}: hydraulic_diameter must be greater than zero. Got {Dh}."
+            )
+
+        if A <= 0.0:
+            raise ValueError(
+                f"{self.name}: cross_sectional_area must be greater than zero. Got {A}."
+            )
+
+        if self.Re_given:
+            Re = self.reynolds_number.value
+        else:
+            Re = mdot * Dh / (mu * A)
+            self.reynolds_number.value = Re
+
+        if self.Pr_given:
+            Pr = self.prandtl_number.value
+        else:
+            Pr = mu * Cp / k
+            self.prandtl_number.value = Pr
+
+        Nu = ((f / 8.0) * Re * Pr) / (
+            1.07
+            + 12.7 * (f / 8.0) ** 0.5 * (Pr ** (2.0 / 3.0) - 1.0)
+        )
+
+        self.convection_coefficient.value = Nu * k / Dh
+        self.nusselt_number.value = Nu
+        self.stanton_number.value = Nu / (Re * Pr)
 
 
 
@@ -255,7 +348,7 @@ class SiederTate(Component):
             self.reynolds_number.value = Re
 
         if self.Pr_given:
-            Pr = self.reynolds_number.value
+            Pr = self.prandtl_number.value
         else:
             Pr = mu * Cp / k
             self.prandtl_number.value = Pr
@@ -402,7 +495,7 @@ class DittusBoelter(Component):
             self.reynolds_number.value = Re
 
         if self.Pr_given:
-            Pr = self.reynolds_number.value
+            Pr = self.prandtl_number.value
         else:
             Pr = mu * Cp / k
             self.prandtl_number.value = Pr
@@ -538,6 +631,14 @@ class Bartz(Component):
 
     The Bartz correlation is empirical and is most accurate for
     chemically reacting rocket exhaust gases.
+
+    Bartz tends to underpredict when the effects of radiation are
+    strong, when there is a lot dissociation/recombination in the 
+    boundary layer, or when there are significant combustion 
+    instabilities. 
+
+    Bartz tends to overpredict when soot deposition on the walls is 
+    significant or when the combustion is incomplete.
     """
     def __init__(self, 
                  name: str, 
@@ -587,3 +688,101 @@ class Bartz(Component):
         hg = X * sigma * geometric_correction
 
         self.convection_coefficient.value = hg
+
+
+
+
+
+
+
+
+class NaturalConvection(Component):
+    """
+    Empirical natural-convection heat transfer coefficient.
+
+    Correlation
+    -----------
+        Gr = g beta |Tw - Tf| L^3 rho^2 / mu^2
+
+        Pr = Cp mu / k
+
+        Ra = Gr Pr
+
+        Nu = c Ra^n
+
+        h = Nu k / L
+
+    Coefficients
+    ------------
+        Laminar:   Ra < 1e9   -> c = 0.59, n = 0.25
+        Turbulent: Ra >= 1e9  -> c = 0.13, n = 0.33
+
+    Notes
+    -----
+    Fluid properties should be evaluated at the film temperature:
+
+        Tfilm = 0.5 * (Tw + Tf)
+
+    beta is the volumetric thermal expansion coefficient [1/K].
+    For an ideal gas, beta = 1 / Tfilm.
+
+    Recommended Validity Range
+    --------------------------
+    * 1e4 <= Ra <= 1e13
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        wall_temperature: State,
+        fluid_temperature: State,
+        characteristic_length: State | float,
+        fluid_density: State,
+        fluid_specific_heat: State,
+        fluid_dynamic_viscosity: State,
+        fluid_conductivity: State,
+        thermal_expansion_coefficient: State,
+        gravity: State | float = 9.80665,
+        grashof_number: State | float | None = None,
+        prandtl_number: State | float | None = None,
+        rayleigh_number: State | float | None = None,
+        nusselt_number: State | float | None = None,
+        convection_coefficient: State | None = None,
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        Tw = self.wall_temperature.value
+        Tf = self.fluid_temperature.value
+        L = self.characteristic_length.value
+        rho = self.fluid_density.value
+        Cp = self.fluid_specific_heat.value
+        mu = self.fluid_dynamic_viscosity.value
+        k = self.fluid_conductivity.value
+        beta = self.thermal_expansion_coefficient.value
+        g = self.gravity.value
+
+        if L <= 0.0:
+            raise ValueError(
+                f"{self.name}: characteristic_length must be greater than zero. Got {L}."
+            )
+
+        Gr = g * beta * abs(Tw - Tf) * L**3 * rho**2 / mu**2
+        Pr = Cp * mu / k
+        Ra = Gr * Pr
+
+        if Ra < 1.0e9:
+            c = 0.59
+            n = 0.25
+        else:
+            c = 0.13
+            n = 0.33
+
+        Nu = c * Ra**n
+
+        self.grashof_number.value = Gr
+        self.prandtl_number.value = Pr
+        self.rayleigh_number.value = Ra
+        self.nusselt_number.value = Nu
+        self.convection_coefficient.value = Nu * k / L

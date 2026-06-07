@@ -117,3 +117,65 @@ class Churchill(Component):
             "Deff",
         }
 
+
+
+
+
+
+class PetukhovFriction(Component):
+    """
+    Petukhov smooth-pipe turbulent Darcy friction factor.
+
+    Correlation
+    -----------
+        f = (0.79 ln(Re) - 1.64)^(-2)
+
+    where:
+        Re = mdot * Dh / (mu * A)
+
+    Notes
+    -----
+    This correlation returns the Darcy friction factor.
+    It is intended for smooth turbulent internal flow.
+
+    The roughness input is intentionally omitted because this correlation
+    does not include relative roughness. Use Colebrook or Churchill when
+    wall roughness should be modeled.
+
+    The optional Poiseuille number is used only for the laminar fallback,
+    consistent with the Colebrook and Churchill components.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        mass_flow: State,
+        friction_factor: State,
+        hydraulic_diameter: State | float,
+        dynamic_viscosity: State,
+        cross_sectional_area: State | float,
+        poiseuille_number: float = 16,
+        reynolds_number: State | float | None = None,
+        reynolds_number_threshold: State | float = 2300.0,
+    ):
+        self.setup()
+
+    def evaluate_states(self):
+        mdot = abs(self.mass_flow.value)
+        mu = self.dynamic_viscosity.value
+        A = self.cross_sectional_area.value
+        Dh = self.hydraulic_diameter.value
+        Po = self.poiseuille_number.value
+
+        Re = mdot * Dh / (mu * A)
+        Re = max(Re, 1e-12)
+
+        self.reynolds_number.value = Re
+
+        if Re <= self.reynolds_number_threshold.value:
+            f = 4.0 * Po / Re
+        else:
+            f = (0.79 * np.log(Re) - 1.64) ** -2
+
+        self.friction_factor.value = f
