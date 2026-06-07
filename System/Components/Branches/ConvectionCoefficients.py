@@ -140,7 +140,112 @@ class Gnielinski(Component):
 
 
 
-class Miropolskii(Component): pass
+class Miropolskii(Component):
+    """
+    Miropolskii film-boiling heat transfer coefficient for two-phase flow.
+
+    Correlation
+    -----------
+        Nu = 0.023 Re^0.8 Pr^0.4 Y
+
+        Re = (G Dh / mu_v) [x + (rho_v / rho_l)(1 - x)]
+
+        Pr = Cp_v mu_v / k_v
+
+        Y = 1 - 0.1 (rho_l / rho_v)^0.4 (1 - x)^0.4
+
+        h = Nu k_v / Dh
+
+    Notes
+    -----
+    x is vapor quality.
+
+    This correlation is intended for film-boiling two-phase flow and is useful
+    for chilldown problems. It is not intended for nucleate boiling.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        network: Network,
+        mass_flow: State,
+        hydraulic_diameter: State | float,
+        cross_sectional_area: State | float,
+        quality: State | float,
+        vapor_density: State,
+        vapor_specific_heat: State,
+        vapor_dynamic_viscosity: State,
+        vapor_conductivity: State,
+        liquid_density: State,
+        reynolds_number: State | float | None = None,
+        prandtl_number: State | float | None = None,
+        correction_factor: State | float | None = None,
+        nusselt_number: State | float | None = None,
+        stanton_number: State | float | None = None,
+        convection_coefficient: State | None = None,
+    ):
+        self.setup()
+
+        self.Re_given = reynolds_number is not None
+        self.Pr_given = prandtl_number is not None
+
+    def evaluate_states(self):
+        mdot = abs(self.mass_flow.value)
+        Dh = self.hydraulic_diameter.value
+        A = self.cross_sectional_area.value
+        x = self.quality.value
+        rho_v = self.vapor_density.value
+        Cp_v = self.vapor_specific_heat.value
+        mu_v = self.vapor_dynamic_viscosity.value
+        k_v = self.vapor_conductivity.value
+        rho_l = self.liquid_density.value
+
+        if Dh <= 0.0:
+            raise ValueError(
+                f"{self.name}: hydraulic_diameter must be greater than zero. Got {Dh}."
+            )
+
+        if A <= 0.0:
+            raise ValueError(
+                f"{self.name}: cross_sectional_area must be greater than zero. Got {A}."
+            )
+
+        if not (0.0 <= x <= 1.0):
+            raise ValueError(
+                f"{self.name}: quality must be between 0 and 1. Got {x}."
+            )
+
+        G = mdot / A
+
+        if self.Re_given:
+            Re = self.reynolds_number.value
+        else:
+            Re = (G * Dh / mu_v) * (x + (rho_v / rho_l) * (1.0 - x))
+            self.reynolds_number.value = Re
+
+        if self.Pr_given:
+            Pr = self.prandtl_number.value
+        else:
+            Pr = Cp_v * mu_v / k_v
+            self.prandtl_number.value = Pr
+
+        Y = 1.0 - 0.1 * (rho_l / rho_v)**0.4 * (1.0 - x)**0.4
+
+        if Y <= 0.0:
+            raise ValueError(
+                f"{self.name}: Miropolskii correction factor became non-positive. Y={Y}."
+            )
+
+        Nu = 0.023 * Re**0.8 * Pr**0.4 * Y
+
+        self.correction_factor.value = Y
+        self.nusselt_number.value = Nu
+        self.stanton_number.value = Nu / (Re * Pr)
+        self.convection_coefficient.value = Nu * k_v / Dh
+
+
+
+
 
 
 
