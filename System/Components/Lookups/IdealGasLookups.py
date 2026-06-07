@@ -18,20 +18,28 @@ FluidInput = str | dict[str, State | float] | Composition
 
 class IdealGasLookup(Component):
     """
-    PYroMat-backed ideal-gas property lookup component.
+    PYroMat and CoolProp use different thermodynamic reference states for
+    enthalpy, internal energy, entropy, Gibbs free energy, and Helmholtz
+    free energy.
 
-    By default, reference-dependent ideal-gas properties are shifted onto the
-    CoolProp-backed Fluid reference basis.
+    When adjust_reference=True (default), ThermoProp automatically applies
+    constant reference-state offsets so that these properties are reported
+    on the same basis as the equivalent CoolProp fluid at the reference
+    state.
 
-    If adjust_reference=True:
-        - The gas or mixture must also be available through Fluid/CoolProp.
-        - enthalpy, internal_energy, entropy, gibbs_energy, and free_energy are
-          shifted from the PYroMat basis to the Fluid basis at the reference
-          state.
+    The adjustment preserves thermodynamic differences and derivatives while
+    eliminating arbitrary backend-specific reference-state offsets.
 
-    If adjust_reference=False:
-        - No CoolProp reference state is created.
-        - Values are returned directly from PYroMat.
+    Adjusted properties:
+        * enthalpy
+        * internal_energy
+        * entropy
+        * gibbs_energy
+        * free_energy
+        * helmholtz_energy
+
+    Properties derived from temperature, pressure, density, transport
+    correlations, or thermodynamic derivatives are not modified.
     """
 
     _REFERENCE_TEMPERATURE = 298.15
@@ -50,6 +58,7 @@ class IdealGasLookup(Component):
         "specific_volume",
         "entropy",
         "free_energy",
+        "helmholtz_energy",
         "gibbs_energy",
     }
 
@@ -513,6 +522,7 @@ class IdealGasLookup(Component):
 
         return float(value)
 
+
     def _from_ideal_basis(self, name: str, value: float) -> float:
         """Convert PYroMat-basis properties to the Fluid reference basis."""
         if not self.adjust_reference:
@@ -549,7 +559,7 @@ class IdealGasLookup(Component):
                 - self._IdealGas.temperature * entropy_offset
             )
 
-        if name == "free_energy":
+        if name in ("free_energy", "helmholtz_energy"):
             return (
                 float(value)
                 + internal_energy_offset
@@ -557,6 +567,8 @@ class IdealGasLookup(Component):
             )
 
         return float(value)
+
+
 
     def _get_property(self, name: str):
         if not self._ensure_backend_initialized():
