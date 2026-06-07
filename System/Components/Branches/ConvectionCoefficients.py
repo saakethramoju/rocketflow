@@ -140,6 +140,11 @@ class Gnielinski(Component):
 
 
 
+class Miropolskii(Component): pass
+
+
+
+
 
 class Petukhov(Component):
     """
